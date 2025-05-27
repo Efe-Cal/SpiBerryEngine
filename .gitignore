@@ -1,0 +1,7 @@
+__pycache__/
+# image files
+*.png
+*.jpg
+*.jpeg
+raspi_functions.py
+robot_code.py
