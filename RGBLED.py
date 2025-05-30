@@ -1,4 +1,5 @@
 import RPi.GPIO as GPIO # type: ignore
+import time
 
 class RGBLED:
     """
@@ -80,6 +81,25 @@ class RGBLED:
         """Cleans up the GPIO pins used by this LED."""
         self.turn_off()
         GPIO.cleanup([self.red_pin, self.green_pin, self.blue_pin])
+    def blink(self, color, duration=0.5, count=3):
+        color_map = {
+            'red': self.red,
+            'green': self.green,
+            'blue': self.blue,
+            'yellow': self.yellow,
+            'cyan': self.cyan,
+            'magenta': self.magenta,
+            'white': self.white
+        }
+        
+        if color not in color_map:
+            raise ValueError(f"Invalid color: {color}. Choose from {list(color_map.keys())}.")
+
+        for _ in range(count):
+            color_map[color]()
+            time.sleep(duration)
+            self.turn_off()
+            time.sleep(duration)
 
 # Example Usage (ensure GPIO mode is set before this):
 if __name__ == "__main__":
