@@ -1,10 +1,10 @@
 import threading
 from time import sleep
+import argparse
 
 import RPi.GPIO as GPIO # type: ignore
 from RGBLED import RGBLED
 
-import keyboard
 import sys
 import serial.serialutil
 import importlib
@@ -13,9 +13,16 @@ try:
 except ImportError:
     pass
 
+parser = argparse.ArgumentParser(description="SpiBerryEngine GPIO pin configuration")
+parser.add_argument('--button', type=int, default=11, help='GPIO pin for button (default: 11)')
+parser.add_argument('--red', type=int, default=22, help='GPIO pin for RGBLED red (default: 22)')
+parser.add_argument('--green', type=int, default=10, help='GPIO pin for RGBLED green (default: 10)')
+parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue (default: 9)')
+args = parser.parse_args()
+
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(11, GPIO.HIGH, pull_up_down=GPIO.PUD_UP)
-rgbLED = RGBLED(22, 10, 9, active_high=False)
+GPIO.setup(args.button, GPIO.HIGH, pull_up_down=GPIO.PUD_UP)
+rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
 
 try:
     from mpremote import commands, transport
@@ -105,8 +112,7 @@ def worker():
     
 try:
     while True:
-        if GPIO.input(11)==0:
-        # if keyboard.is_pressed('q'):
+        if GPIO.input(args.button_pin)==0:
             if work_event.is_set():
                 print("Button pressed, stopping work...")
                 work_event.clear()
