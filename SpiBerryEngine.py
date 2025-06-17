@@ -1,3 +1,4 @@
+import asyncio
 import threading
 from time import sleep
 import argparse
@@ -8,10 +9,6 @@ from RGBLED import RGBLED
 import sys
 import serial.serialutil
 import importlib
-try:
-    import raspi_functions
-except ImportError:
-    pass
 
 parser = argparse.ArgumentParser(description="SpiBerryEngine GPIO pin configuration")
 parser.add_argument('--button', type=int, default=11, help='GPIO pin for button (default: 11)')
@@ -28,15 +25,20 @@ try:
     from mpremote import commands, transport
     from mpremote.main import State
 except ModuleNotFoundError:
-    rgbLED.blink("red", duration=0.2, count=2)
+    rgbLED.blink("red", duration=0.1, count=5)
     print("mpremote module not found.")
     sys.exit(0)
+
+try:
+    import raspi_functions
+except ImportError:
+    rgbLED.blink("red", duration=0.2, count=2)
 
 state = State()
 try:
     commands.do_connect(state)
 except (transport.TransportError, commands.CommandError) as e:
-    rgbLED.blink("red", duration=0.2, count=3)
+    rgbLED.blink("red", duration=0.3, count=5)
     print("Error connecting to the device:")
     sys.exit(0)
 
@@ -44,6 +46,11 @@ def stop(state:State):
     commands.do_disconnect(state)
     commands.do_connect(state)
     commands.do_soft_reset(state)
+
+def fire_and_forget(coro):
+    def runner():
+        asyncio.run(coro)
+    threading.Thread(target=runner, daemon=True).start()
 
 
 with open("robot_code.py","r") as f:
@@ -71,7 +78,7 @@ def run_function(func_call:str):
         try:
             result_string = eval("raspi_functions."+func_call)
         except NameError as e:
-            rgbLED.blink("blue", duration=0.5, count=2)
+            rgbLED.blink("blue", duration=0.3, count=2)
             print("NameError in function call: ", e)
             result_string = ""
         except Exception as e:
@@ -83,17 +90,17 @@ def worker():
     try:
         state.transport.enter_raw_repl()
     except transport.TransportError as e:
-        rgbLED.blink("blue", duration=0.2, count=3)
+        rgbLED.blink("blue", duration=0.1, count=2)
         print("Error entering raw REPL:", e)
         sys.exit(0)
     try:
         state.transport.exec_raw_no_follow(code)
     except transport.TransportError as e:
-        rgbLED.blink("red", duration=0.2, count=3)
+        rgbLED.blink("blue", duration=0.1, count=5)
         print("Error executing code:", e)
         sys.exit(0)
 
-    rgbLED.green()
+    fire_and_forget(rgbLED.blink("green", duration=0.2, count=2))
     
     func_call = read_function_call(state)
     
@@ -109,24 +116,38 @@ def worker():
         func_call = read_function_call(state)
     print("Code finished.")
     work_event.clear()
+    rgbLED.blink("green", duration=0.2, count=2)
     
 try:
+    rgbLED.cycle(["red", "green", "blue"], duration=0.3)
+    rgbLED.green()
     while True:
         if GPIO.input(args.button_pin)==0:
             if work_event.is_set():
                 print("Button pressed, stopping work...")
+                # Stop the robot
                 work_event.clear()
                 stop(state)
                 rgbLED.red()
             else:
+                # Reload the code and raspi_functions module
                 with open("robot_code.py","r") as f:
-                    code = f.read()
+                    new_code = f.read()
+                    if new_code != code:
+                        print("Code has changed, reloading...")
+                        fire_and_forget(rgbLED.blink("cyan", duration=0.2, count=3))
+                    code = new_code
+                old_raspi_funcs = len(raspi_functions.__dict__.keys())
                 importlib.reload(raspi_functions)
+                if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
+                    fire_and_forget(rgbLED.blink("cyan", duration=0.2, count=2))
+                    print("Reloaded raspi_functions module.")
+                
+                # Start the worker thread
                 work_event.set()
                 worker_thread = threading.Thread(target=worker)
                 worker_thread.start()
                 print("Button pressed, starting work...")
-
                 rgbLED.yellow()
 
             sleep(0.3)

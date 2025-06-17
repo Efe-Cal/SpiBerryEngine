@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO # type: ignore
 import time
+import asyncio
 
 class RGBLED:
     """
@@ -81,26 +82,31 @@ class RGBLED:
         """Cleans up the GPIO pins used by this LED."""
         self.turn_off()
         GPIO.cleanup([self.red_pin, self.green_pin, self.blue_pin])
-    def blink(self, color, duration=0.5, count=3):
-        color_map = {
-            'red': self.red,
-            'green': self.green,
-            'blue': self.blue,
-            'yellow': self.yellow,
-            'cyan': self.cyan,
-            'magenta': self.magenta,
-            'white': self.white
-        }
-        
-        if color not in color_map:
-            raise ValueError(f"Invalid color: {color}. Choose from {list(color_map.keys())}.")
-
+    
+    async def blink(self, color, duration=0.5, count=3):
         for _ in range(count):
-            color_map[color]()
+            if not hasattr(self, color):
+                raise ValueError(f"Invalid color: {color}. Available colors: red, green, blue, yellow, cyan, magenta, white.")
+            getattr(self,color)()
             time.sleep(duration)
             self.turn_off()
             time.sleep(duration)
 
+    async def cycle(self, colors, duration=0.3):
+        """
+        Cycles through a list of colors.
+
+        Args:
+            colors (list): A list of color names to cycle through.
+            duration (float): Time in seconds to display each color.
+        """
+        for color in colors:
+            if hasattr(self, color):
+                getattr(self, color)()
+                time.sleep(duration)
+            else:
+                raise ValueError(f"Invalid color: {color}. Available colors: {', '.join(colors)}")
+        self.turn_off()
 # Example Usage (ensure GPIO mode is set before this):
 if __name__ == "__main__":
     import time
