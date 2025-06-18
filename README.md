@@ -1,6 +1,8 @@
 # SpiBerryEngine
 
-A Raspberry Pi project for controlling a robot and communicating with a microcontroller using GPIO and serial.
+A project that aims to primarily control Lego Spike with a Raspberry Pi.
+It uses the `mpremote` tool to communicate with the Lego Spike hub.
+I believe it can also be used with other micropython devices 
 
 ## Setup
 
