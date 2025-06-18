@@ -1,10 +1,8 @@
-import asyncio
 import threading
 from time import sleep
 import argparse
 
-import RPi.GPIO as GPIO # type: ignore
-from RGBLED import RGBLED
+from gpiozero import RGBLED, Button
 
 import sys
 import serial.serialutil
@@ -17,28 +15,30 @@ parser.add_argument('--green', type=int, default=10, help='GPIO pin for RGBLED g
 parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue (default: 9)')
 args = parser.parse_args()
 
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(args.button, GPIO.HIGH, pull_up_down=GPIO.PUD_UP)
 rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
+button = Button(args.button,pull_up=True)
 
 try:
     from mpremote import commands, transport
     from mpremote.main import State
 except ModuleNotFoundError:
-    rgbLED.blink("red", duration=0.1, count=5)
+    # Blink red 5 times
+    rgbLED.blink(on_time=0.1, off_time=0.1, n=5, on_color=(1,0,0), off_color=(0,0,0), background=False)
     print("mpremote module not found.")
     sys.exit(0)
 
 try:
     import raspi_functions
 except ImportError:
-    rgbLED.blink("red", duration=0.2, count=2)
+    # Blink red 2 times
+    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
 
 state = State()
 try:
     commands.do_connect(state)
 except (transport.TransportError, commands.CommandError) as e:
-    rgbLED.blink("red", duration=0.3, count=5)
+    # Blink red 5 times
+    rgbLED.blink(on_time=0.3, off_time=0.3, n=5, on_color=(1,0,0), off_color=(0,0,0), background=False)
     print("Error connecting to the device:")
     sys.exit(0)
 
@@ -46,12 +46,6 @@ def stop(state:State):
     commands.do_disconnect(state)
     commands.do_connect(state)
     commands.do_soft_reset(state)
-
-def fire_and_forget(coro):
-    def runner():
-        asyncio.run(coro)
-    threading.Thread(target=runner, daemon=True).start()
-
 
 with open("robot_code.py","r") as f:
     code = f.read()
@@ -65,10 +59,13 @@ def read_function_call(state:State):
     except serial.serialutil.SerialException as e:
         if "ClearCommError" in str(e):
             if not work_event.is_set():
-                sys.exit(1)
+                sys.exit(0)
             print("Serial port error")
         else:
-            raise e
+            print("Error reading function call:", e)
+    except TypeError as e:
+        return ""
+    
     func_call = func_call.decode()[:-1].strip()
     return func_call
 
@@ -90,17 +87,20 @@ def worker():
     try:
         state.transport.enter_raw_repl()
     except transport.TransportError as e:
-        rgbLED.blink("blue", duration=0.1, count=2)
+        # Blink blue 2 times
+        rgbLED.blink(on_time=0.1, off_time=0.1, n=2, on_color=(0,0,1), off_color=(0,0,0), background=False)
         print("Error entering raw REPL:", e)
         sys.exit(0)
     try:
         state.transport.exec_raw_no_follow(code)
     except transport.TransportError as e:
-        rgbLED.blink("blue", duration=0.1, count=5)
+        # Blink blue 5 times
+        rgbLED.blink(on_time=0.1, off_time=0.1, n=5, on_color=(0,0,1), off_color=(0,0,0), background=False)
         print("Error executing code:", e)
         sys.exit(0)
 
-    fire_and_forget(rgbLED.blink("green", duration=0.2, count=2))
+    # Blink green 2 times (background)
+    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
     
     func_call = read_function_call(state)
     
@@ -114,41 +114,54 @@ def worker():
         state.transport.read_until(8,result_string.encode()) # clean up the acknowledgment
         
         func_call = read_function_call(state)
-    print("Code finished.")
+    print("Code stopped/finished.")
     work_event.clear()
-    rgbLED.blink("green", duration=0.2, count=2)
+    # Blink green 2 times
+    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=False)
     
 try:
-    rgbLED.cycle(["red", "green", "blue"], duration=0.3)
-    rgbLED.green()
+    rgbLED.color = (0,1,0)  # green
     while True:
-        if GPIO.input(args.button_pin)==0:
+        if button.is_pressed:
             if work_event.is_set():
                 print("Button pressed, stopping work...")
                 # Stop the robot
                 work_event.clear()
+                print(threading.active_count())
                 stop(state)
-                rgbLED.red()
+                # Blink red 3 times
+                rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
+                sleep(0.2)
+                rgbLED.color = (0,1,0)  # green
             else:
                 # Reload the code and raspi_functions module
                 with open("robot_code.py","r") as f:
                     new_code = f.read()
                     if new_code != code:
                         print("Code has changed, reloading...")
-                        fire_and_forget(rgbLED.blink("cyan", duration=0.2, count=3))
+                        # Blink cyan 3 times (background)
+                        rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
                     code = new_code
                 old_raspi_funcs = len(raspi_functions.__dict__.keys())
                 importlib.reload(raspi_functions)
                 if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
-                    fire_and_forget(rgbLED.blink("cyan", duration=0.2, count=2))
+                    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
                     print("Reloaded raspi_functions module.")
+                
+                # Check the serial connection
+                state.transport.serial.flushInput()
+                state.transport.serial.flushOutput()
+                if not state.transport.serial.is_open:
+                    print("Serial port is not open, reconnecting...")
+                    commands.do_disconnect(state)
+                    commands.do_connect(state)
                 
                 # Start the worker thread
                 work_event.set()
                 worker_thread = threading.Thread(target=worker)
                 worker_thread.start()
                 print("Button pressed, starting work...")
-                rgbLED.yellow()
+                rgbLED.color = (1,1,0)  # yellow
 
             sleep(0.3)
 except Exception as e:
@@ -158,10 +171,6 @@ except KeyboardInterrupt:
     if work_event.is_set():
         work_event.clear()
         stop(state)
-        rgbLED.red()
     else:
         print("No work to stop.")
-finally:
-    print("Cleaning up GPIO")
-    GPIO.cleanup()
-    print("Exiting program")
+    rgbLED.off()

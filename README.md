@@ -37,12 +37,13 @@ The RGB LED provides visual feedback for the system state:
 | Color | Blink Count | Blink Duration | Meaning                                 |
 |-------|-------------|---------------|-----------------------------------------|
 | Red   | 2           | 0.2s          | `raspi_functions` import error          |
+| Red   | 2           | 0.2           | Stopped code execution
 | Red   | 5           | 0.1s          | `mpremote` not found                    |
 | Red   | 5           | 0.3s          | Connection error                        |
 | Blue  | 2           | 0.1s          | REPL error                              |
 | Blue  | 2           | 0.3s          | Function call function not found error  |
 | Blue  | 5           | 0.1s          | Code execution error                    |
-| Green | 2           | 0.2s          | Code started/ended                      |
+| Green | 2           | 0.2s          | Code started/stopped/ended              |
 | Cyan  | 2           | 0.2s          | Functions reloaded                      |
 | Cyan  | 3           | 0.2s          | Code reloaded                           |
 | Cyan  | 5           | 0.2s          | Functions & Code reloaded               |
