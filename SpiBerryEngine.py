@@ -64,6 +64,10 @@ def read_function_call(state:State):
         else:
             print("Error reading function call:", e)
     except TypeError as e:
+        print("TypeError reading function call:", e)
+        return ""
+    except Exception as e:
+        print("Error reading function call:", e)
         return ""
     
     func_call = func_call.decode()[:-1].strip()
@@ -74,7 +78,7 @@ def run_function(func_call:str):
     if not func_call=="" and func_call.isprintable():
         try:
             result_string = eval("raspi_functions."+func_call)
-        except NameError as e:
+        except(NameError, AttributeError)as e:
             rgbLED.blink("blue", duration=0.3, count=2)
             print("NameError in function call: ", e)
             result_string = ""
