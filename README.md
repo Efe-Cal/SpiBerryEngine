@@ -46,6 +46,6 @@ The RGB LED provides visual feedback for the system state:
 | Blue  | 2           | 0.3s          | Function call function not found error  |
 | Blue  | 5           | 0.1s          | Code execution error                    |
 | Green | 2           | 0.2s          | Code started/stopped/ended              |
-| Cyan  | 2           | 0.2s          | Functions reloaded                      |
-| Cyan  | 3           | 0.2s          | Code reloaded                           |
+| Cyan  | 2           | 0.2s          | Code reloaded                           |
+| Cyan  | 3           | 0.2s          | Functions reloaded                      |
 | Cyan  | 5           | 0.2s          | Functions & Code reloaded               |

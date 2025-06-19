@@ -6,6 +6,10 @@ import sys
 import serial.serialutil
 import importlib
 
+from watchdog.observers import Observer
+from watchdog.events import FileSystemEventHandler
+
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +50,35 @@ except ImportError:
     logger.critical("raspi_functions import error.")
     sys.exit(0)
 
+with open("robot_code.py","r") as f:
+    code = f.read()
+    logger.info("Loaded robot_code.py.")
+
+class HotReloadHandler(FileSystemEventHandler):
+    def __init__(self):
+        super().__init__()
+        self.last_code = code
+
+    def on_modified(self, event):
+        global code
+        if event.src_path.endswith("robot_code.py"):
+            with open("robot_code.py", "r") as f:
+                new_code = f.read()
+                if new_code != self.last_code:
+                    logger.info("Hot reloaded robot_code.py")
+                    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=False)
+                    code = new_code
+                    self.last_code = new_code
+        elif event.src_path.endswith("raspi_functions.py"):
+            importlib.reload(raspi_functions)
+            logger.info("Hot reloaded raspi_functions module.")
+            rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=False)
+
+observer = Observer()
+event_handler = HotReloadHandler()
+observer.schedule(event_handler, ".", recursive=False)
+observer.start()
+
 state = State()
 try:
     commands.do_connect(state)
@@ -61,10 +94,6 @@ def stop(state:State):
     commands.do_disconnect(state)
     commands.do_connect(state)
     commands.do_soft_reset(state)
-
-with open("robot_code.py","r") as f:
-    code = f.read()
-    logger.info("Loaded robot_code.py.")
 
 work_event = threading.Event()
 worker_thread = None
@@ -134,10 +163,14 @@ def worker():
         logger.info(f"Function call received: {func_call}")
         
         result_string = run_function(func_call)
-        
-        state.transport.serial.write(f"{result_string}\r\n".encode())
-        state.transport.read_until(8,result_string.encode()) # clean up the acknowledgment
-        
+        try:
+            
+            state.transport.serial.write(f"{result_string}\r\n".encode())
+            if result_string:
+                state.transport.read_until(8,result_string.encode()) # clean up the acknowledgment
+        except (serial.serialutil.SerialException, OSError) as e:
+            logger.error(f"Error writing result to serial: {e}")
+            
         func_call = read_function_call(state)
     logger.info("Code stopped/finished.")
     work_event.clear()
@@ -199,3 +232,6 @@ except KeyboardInterrupt:
     else:
         logger.info("No work to stop.")
     rgbLED.off()
+finally:
+    observer.stop()
+    observer.join()

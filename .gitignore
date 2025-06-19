@@ -5,3 +5,4 @@ __pycache__/
 *.jpeg
 raspi_functions.py
 robot_code.py
+venv/
