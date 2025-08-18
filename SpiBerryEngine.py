@@ -1,16 +1,18 @@
-import re
-import threading
-from time import sleep
-import argparse
-import logging
 import sys
-import gpiozero
-import serial.serialutil
+import re
+import logging
+import threading
+import argparse
 import importlib
+from time import sleep
+
+import gpiozero
+from gpiozero import RGBLED, Button
+
+import serial.serialutil
 
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-
 
 # Setup logging
 logging.basicConfig(
@@ -23,13 +25,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SpiBerryEngine")
 
-from gpiozero import RGBLED, Button
 
 parser = argparse.ArgumentParser(description="SpiBerryEngine GPIO pin configuration")
-parser.add_argument('--button', type=int, default=11, help='GPIO pin for button (default: 11)')
-parser.add_argument('--red', type=int, default=22, help='GPIO pin for RGBLED red (default: 22)')
+parser.add_argument('--button', type=int, default=17, help='GPIO pin for button (default: 11)')
+parser.add_argument('--red', type=int, default=9, help='GPIO pin for RGBLED red (default: 22)')
 parser.add_argument('--green', type=int, default=10, help='GPIO pin for RGBLED green (default: 10)')
-parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue (default: 9)')
+parser.add_argument('--blue', type=int, default=11, help='GPIO pin for RGBLED blue (default: 9)')
 args = parser.parse_args()
 
 rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
@@ -127,44 +128,50 @@ def run_function(func_call:str):
     result_string = ""
     if not func_call=="" and func_call.isprintable():
         if "devices" in func_call:
-            function = func_call.split(".")[1:]
-            # devices.register(servo, s1, 17)
-            # devices.register(distance_sensor, d1, 15, 16, 4)
-            if len(function) == 1:
-                # Extract value inside parentheses, e.g. register(123)
-                register_match = re.match(r"^register\((.*?)\)$", function[0])
-                if register_match:
-                    params = register_match.group(1).split(",") # type, name, pin(s), arg(s)
-                    if params[0] in supported_devices:
-                        if params[0] == "distance_sensor":
-                            devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
-                        elif params[0] == "servo":
-                            devices[params[1]] = gpiozero.AngularServo(params[2],min_angle=0,max_angle=180,min_pulse_width=650/1_000_000,max_pulse_width=2600/1_000_000)
-            # devices.d1.get_distance()
-            # devices.s1.set_angle(90)
-            elif len(function) == 2:
-                if function[0] in devices.keys():
-                    if function[1] == "get_distance":
-                        result_string = str(devices[function[0]].distance*100)
-                    elif function[1] == "get_angle":
-                        result_string = str(devices[function[0]].angle)
-                    elif function[1] == "set_angle":
-                        angle = re.match(r"^(\w+)\((.*?)\)$", function[1])
-                        devices[function[0]].angle = angle
-                        result_string = f"Set angle of {function[1]} to {angle}"
-                    else:
-                        logger.warning(f"Unknown device function: {function[0]}")
-
-        try:
-            logger.info(f"Evaluating function call: {func_call}")
-            result_string = eval("raspi_functions."+func_call)
-        except(NameError, AttributeError)as e:
-            rgbLED.blink("blue", duration=0.3, count=2)
-            logger.warning(f"NameError/AttributeError in function call '{func_call}': {e}")
-            result_string = ""
-        except Exception as e:
-            logger.error(f"Exception in function call '{func_call}': {e}")
-            result_string = ""
+            try:
+                function = func_call.split(".")[1:]
+                # devices.register(servo, s1, 17)
+                # devices.register(distance_sensor, d1, 15, 16, 4)
+                if len(function) == 1:
+                    inside_paranthesis = re.match(r"^register\((.*?)\)$", function[0])
+                    if inside_paranthesis:
+                        params = inside_paranthesis.group(1).split(",") # type, name, pin(s), arg(s)
+                        params = [p.strip() for p in params]
+                        if params[0] in supported_devices:
+                            if params[0] == "distance_sensor":
+                                devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
+                            elif params[0] == "servo":
+                                devices[params[1]] = gpiozero.AngularServo(int(params[2]),min_angle=0,max_angle=180,min_pulse_width=650/1_000_000,max_pulse_width=2600/1_000_000)
+                # devices.d1.get_distance()
+                # devices.s1.set_angle(90)
+                elif len(function) == 2:
+                    if function[0] in devices.keys():
+                        if "get_distance" in function[1]:
+                            result_string = str(devices[function[0]].distance*100)
+                        elif "get_angle" in function[1]:
+                            result_string = str(devices[function[0]].angle)
+                        elif "set_angle" in function[1]:
+                            angle = re.match(r"^(\w+)\((.*?)\)$", function[1])
+                            angle = angle.group(2) if angle else 0
+                            devices[function[0]].angle = int(angle)
+                            result_string = f"Set angle of {function[1]} to {angle}"
+                        else:
+                            result_string = "error-unknown_device"
+                            logger.warning(f"Unknown device function: {function[0]}")
+            except Exception as e:
+                logger.error(f"Error processing device function call '{func_call}': {e}")
+                result_string = "error-unknown"
+        else:
+            try:
+                logger.info(f"Evaluating function call: {func_call}")
+                result_string = eval("raspi_functions."+func_call)
+            except(NameError, AttributeError)as e:
+                rgbLED.blink("blue", duration=0.3, count=2)
+                logger.warning(f"NameError/AttributeError in function call '{func_call}': {e}")
+                result_string = ""
+            except Exception as e:
+                logger.error(f"Exception in function call '{func_call}': {e}")
+                result_string = ""
     return result_string
 
 def worker():
