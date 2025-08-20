@@ -95,10 +95,13 @@ except (transport.TransportError, commands.CommandError) as e:
     sys.exit(0)
 
 def stop(state:State):
+    global devices
     logger.info("Stopping and resetting device connection.")
     commands.do_disconnect(state)
     commands.do_connect(state)
     commands.do_soft_reset(state)
+    del devices
+    devices = {}
 
 work_event = threading.Event()
 worker_thread = None
@@ -247,13 +250,14 @@ try:
                     logger.info("Reloaded raspi_functions module.")
                 
                 # Check the serial connection
-                state.transport.serial.flushInput()
-                state.transport.serial.flushOutput()
                 if not state.transport.serial.is_open:
                     logger.warning("Serial port is not open, reconnecting...")
                     commands.do_disconnect(state)
                     commands.do_connect(state)
-                
+                else:
+                    state.transport.serial.flushInput()
+                    state.transport.serial.flushOutput()
+
                 # Start the worker thread
                 work_event.set()
                 worker_thread = threading.Thread(target=worker)
