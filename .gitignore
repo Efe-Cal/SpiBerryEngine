@@ -6,3 +6,8 @@ raspi_functions.py
 robot_code.py
 venv/
 *.log
+.vscode/
+*.json
+
+**/*dist*/
+**/*build*/

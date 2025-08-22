@@ -52,8 +52,7 @@ try:
 except ImportError:
     # Blink red 2 times
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
-    logger.critical("raspi_functions import error.")
-    sys.exit(0)
+    logger.warning("raspi_functions module not found")
 
 with open("robot_code.py","r") as f:
     code = f.read()
@@ -74,6 +73,7 @@ class HotReloadHandler(FileSystemEventHandler):
                     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=False)
                     code = new_code
                     self.last_code = new_code
+                    
         elif event.src_path.endswith("raspi_functions.py"):
             importlib.reload(raspi_functions)
             logger.info("Hot reloaded raspi_functions module.")
@@ -106,9 +106,53 @@ def stop(state:State):
 work_event = threading.Event()
 worker_thread = None
 
+devices = {}
+
+def handle_device_function_call(func_call:str):
+    global devices
+    function = func_call.split(".")[1:]
+    # devices.register(servo, s1, 17)
+    # devices.register(distance_sensor, d1, 15, 16, 4)
+    if len(function) == 1:
+        inside_paranthesis = re.match(r"^register\((.*?)\)$", function[0])
+        if inside_paranthesis:
+            params = inside_paranthesis.group(1).split(",") # type, name, pin(s), arg(s)
+            params = [p.strip() for p in params]
+            if params[0] in supported_devices:
+                if params[0] == "distance_sensor":
+                    devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
+                elif params[0] == "servo":
+                    devices[params[1]] = gpiozero.AngularServo(int(params[2]),min_angle=0,max_angle=180,min_pulse_width=650/1_000_000,max_pulse_width=2600/1_000_000)
+    # devices.d1.get_distance()
+    # devices.s1.set_angle(90)
+    elif len(function) == 2:
+        if function[0] in devices.keys():
+            if "get_distance" in function[1]:
+                result_string = str(devices[function[0]].distance*100)
+            elif "get_angle" in function[1]:
+                result_string = str(devices[function[0]].angle)
+            elif "set_angle" in function[1]:
+                angle = re.match(r"^(\w+)\((.*?)\)$", function[1])
+                angle = angle.group(2) if angle else 0
+                devices[function[0]].angle = int(angle)
+                result_string = f"Set angle of {function[1]} to {angle}"
+            else:
+                result_string = "error-unknown_device"
+                logger.warning(f"Unknown device function: {function[0]}")
+    return result_string
+
 def read_function_call(state:State):
     try:
-        func_call = state.transport.read_until(8, b":",timeout=999)
+        line:str = state.transport.read_until(8, b"\n",timeout=999).decode()
+        if line.strip() == "":
+            return ""
+        if func_call := re.match(r"^;(.+?);$", line):
+            func_call = func_call.group(1).strip()
+            logger.debug(f"Read function call: {func_call}")
+        else:
+            logger.info(f"Printed: {line.strip()}")
+            func_call = None
+            
     except serial.serialutil.SerialException as e:
         if "ClearCommError" in str(e):
             if not work_event.is_set():
@@ -123,51 +167,23 @@ def read_function_call(state:State):
         logger.error("Error reading function call: %s", e)
         return ""
     
-    func_call = func_call.decode()[:-1].strip()
-    logger.debug(f"Read function call: {func_call}")
     return func_call
-devices = {}
+
 def run_function(func_call:str):
     result_string = ""
     if not func_call=="" and func_call.isprintable():
         if "devices" in func_call:
+            # devics.
             try:
-                function = func_call.split(".")[1:]
-                # devices.register(servo, s1, 17)
-                # devices.register(distance_sensor, d1, 15, 16, 4)
-                if len(function) == 1:
-                    inside_paranthesis = re.match(r"^register\((.*?)\)$", function[0])
-                    if inside_paranthesis:
-                        params = inside_paranthesis.group(1).split(",") # type, name, pin(s), arg(s)
-                        params = [p.strip() for p in params]
-                        if params[0] in supported_devices:
-                            if params[0] == "distance_sensor":
-                                devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
-                            elif params[0] == "servo":
-                                devices[params[1]] = gpiozero.AngularServo(int(params[2]),min_angle=0,max_angle=180,min_pulse_width=650/1_000_000,max_pulse_width=2600/1_000_000)
-                # devices.d1.get_distance()
-                # devices.s1.set_angle(90)
-                elif len(function) == 2:
-                    if function[0] in devices.keys():
-                        if "get_distance" in function[1]:
-                            result_string = str(devices[function[0]].distance*100)
-                        elif "get_angle" in function[1]:
-                            result_string = str(devices[function[0]].angle)
-                        elif "set_angle" in function[1]:
-                            angle = re.match(r"^(\w+)\((.*?)\)$", function[1])
-                            angle = angle.group(2) if angle else 0
-                            devices[function[0]].angle = int(angle)
-                            result_string = f"Set angle of {function[1]} to {angle}"
-                        else:
-                            result_string = "error-unknown_device"
-                            logger.warning(f"Unknown device function: {function[0]}")
+                result_string = handle_device_function_call(func_call)
             except Exception as e:
                 logger.error(f"Error processing device function call '{func_call}': {e}")
                 result_string = "error-unknown"
         else:
+            # raspi_functions.
             try:
                 logger.info(f"Evaluating function call: {func_call}")
-                result_string = eval("raspi_functions."+func_call)
+                result_string = eval(func_call)
             except(NameError, AttributeError)as e:
                 rgbLED.blink("blue", duration=0.3, count=2)
                 logger.warning(f"NameError/AttributeError in function call '{func_call}': {e}")
@@ -199,22 +215,31 @@ def worker():
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
     logger.info("Code execution started. Awaiting function calls.")
     
-    func_call = read_function_call(state)
     
-    while func_call!="exit" and work_event.is_set():
+    
+    while work_event.is_set():
         sleep(0.05)
+        
+        func_call = read_function_call(state)
+        
+        if func_call is None:
+            continue
+        
+        if func_call == "exit":
+            logger.info("Exit command received, stopping worker thread.")
+            break 
+        
         logger.info(f"Function call received: {func_call}")
         
+        # Run the function call and send the result
         result_string = run_function(func_call)
         try:
-            
             state.transport.serial.write(f"{result_string}\r\n".encode())
             if result_string:
                 state.transport.read_until(8,result_string.encode()) # clean up the acknowledgment
         except (serial.serialutil.SerialException, OSError) as e:
             logger.error(f"Error writing result to serial: {e}")
             
-        func_call = read_function_call(state)
     logger.info("Code stopped/finished.")
     work_event.clear()
     # Blink green 2 times
@@ -241,17 +266,17 @@ try:
                     if new_code != code:
                         logger.info("Reloaded robot_code.py")
                         # Blink cyan 3 times (background)
-                        rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                        rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
                     code = new_code
                 old_raspi_funcs = len(raspi_functions.__dict__.keys())
                 importlib.reload(raspi_functions)
                 if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
-                    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                    rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
                     logger.info("Reloaded raspi_functions module.")
                 
                 # Check the serial connection
                 if not state.transport.serial.is_open:
-                    logger.warning("Serial port is not open, reconnecting...")
+                    logger.error("Serial port is not open, reconnecting...")
                     commands.do_disconnect(state)
                     commands.do_connect(state)
                 else:
@@ -265,7 +290,7 @@ try:
                 logger.info("Button pressed, starting work...")
                 rgbLED.color = (1,1,0)  # yellow
 
-            sleep(0.3)
+            sleep(0.2)  # Debounce delay
 except Exception as e:
     logger.exception(f"Error occurred: {e}")
 except KeyboardInterrupt:
