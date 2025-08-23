@@ -25,6 +25,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SpiBerryEngine")
 
+PRINT_LEVEL = logging.INFO
+logging.addLevelName(PRINT_LEVEL, "PRINT")
+
+def print_log(self, message, *args, **kwargs):
+    if self.isEnabledFor(PRINT_LEVEL):
+        self._log(PRINT_LEVEL, message, args, **kwargs)
+
+logging.Logger.print = print_log
 
 parser = argparse.ArgumentParser(description="SpiBerryEngine GPIO pin configuration")
 parser.add_argument('--button', type=int, default=17, help='GPIO pin for button (default: 11)')
@@ -150,7 +158,7 @@ def read_function_call(state:State):
             func_call = func_call.group(1).strip()
             logger.debug(f"Read function call: {func_call}")
         else:
-            logger.info(f"Printed: {line.strip()}")
+            logger.print(f"{line.strip()}")
             func_call = None
             
     except serial.serialutil.SerialException as e:
@@ -214,8 +222,6 @@ def worker():
     # Blink green 2 times (background)
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
     logger.info("Code execution started. Awaiting function calls.")
-    
-    
     
     while work_event.is_set():
         sleep(0.05)
