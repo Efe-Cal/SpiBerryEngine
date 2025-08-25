@@ -65,17 +65,17 @@ class Device:
 
 class Servo(Device):
     def get_angle(self, timeout=1):
-        return input_with_timeout(f";devices.{self.device_name}.get_angle();", timeout=timeout)
+        return input(f";devices.{self.device_name}.get_angle();\n")
     def set_angle(self, angle, timeout=2):
-        return input_with_timeout(f";devices.{self.device_name}.set_angle({angle});", timeout=timeout)
+        return input_with_timeout(f";devices.{self.device_name}.set_angle({angle});\n")
 
 class DistanceSensor(Device):
     def get_distance(self, timeout=1):
-        return input_with_timeout(f";devices.{self.device_name}.get_distance();", timeout=timeout)
+        return input_with_timeout(f";devices.{self.device_name}.get_distance();\n")
 
 class Raspi:
     def register_device(self, device_type, device_name, *args, timeout=1):
-        input_with_timeout(f";devices.register({device_type}, {device_name}, {', '.join(args)});", timeout=timeout)
+        input_with_timeout(f";devices.register({device_type}, {device_name}, {', '.join(args)});\n")
         if device_type == "servo":
             return Servo(device_type, device_name, *args)
         elif device_type == "distance_sensor":
