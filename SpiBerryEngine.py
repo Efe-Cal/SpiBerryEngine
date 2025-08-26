@@ -120,19 +120,20 @@ devices = {}
 def handle_device_function_call(func_call:str):
     global devices
     result_string = ""
-    function = func_call.split(".")[1:]
+    function, params = func_call.split("(")
+    function = function.split(".")[1:]
+    inside_paranthesis = params[:-1]
+    params = inside_paranthesis.split(",") # type, name, pin(s), arg(s)
+    params = [p.strip() for p in params]
+    
     # devices.register(servo, s1, 17)
     # devices.register(distance_sensor, d1, 15, 16, 4)
     if len(function) == 1:
-        inside_paranthesis = re.match(r"^register\((.*?)\)$", function[0])
-        if inside_paranthesis:
-            params = inside_paranthesis.group(1).split(",") # type, name, pin(s), arg(s)
-            params = [p.strip() for p in params]
-            if params[0] in supported_devices:
-                if params[0] == "distance_sensor":
-                    devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
-                elif params[0] == "servo":
-                    devices[params[1]] = gpiozero.AngularServo(int(params[2]),int(params[3]),max_angle=int(params[4]),min_pulse_width=float(params[5]),max_pulse_width=float(params[6]),initial_angle=int(params[7]))
+        if params and params[0] in supported_devices:
+            if params[0] == "distance_sensor":
+                devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
+            elif params[0] == "servo":
+                devices[params[1]] = gpiozero.AngularServo(int(params[2]),min_angle=int(params[3]),max_angle=int(params[4]),min_pulse_width=float(params[5]),max_pulse_width=float(params[6]),initial_angle=int(params[7]))
     # devices.d1.get_distance()
     # devices.s1.set_angle(90)
     elif len(function) == 2:
@@ -142,8 +143,7 @@ def handle_device_function_call(func_call:str):
             elif "get_angle" in function[1]:
                 result_string = str(devices[function[0]].angle)
             elif "set_angle" in function[1]:
-                angle = re.match(r"^(\w+)\((.*?)\)$", function[1])
-                angle = angle.group(2) if angle else 0
+                angle = params[0]
                 devices[function[0]].angle = int(angle)
                 result_string = f"Set angle of {function[1]} to {angle}"
             else:
@@ -235,9 +235,7 @@ def worker():
         
         if func_call == "exit":
             logger.info("Exit command received, stopping worker thread.")
-            break 
-        
-        logger.info(f"Function call received: {func_call}")
+            break
         
         # Run the function call and send the result
         result_string = run_function(func_call)
