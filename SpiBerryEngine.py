@@ -153,12 +153,12 @@ def handle_device_function_call(func_call:str):
 
 def read_function_call(state:State):
     try:
-        line:str = state.transport.read_until(8, b"\n",timeout=999).decode()
+        line:str = state.transport.serial.readline().decode('utf-8').strip()
         if line.strip() == "":
             return ""
         if func_call := re.match(r"^;(.+?);$", line.strip()):
             func_call = func_call.group(1).strip()
-            logger.debug(f"Read function call: {func_call}")
+            logger.info(f"Read function call: {func_call}")
         else:
             logger.print(f"{line.strip()}")
             func_call = None
@@ -170,6 +170,7 @@ def read_function_call(state:State):
                 sys.exit(0)
         else:
             logger.error("Unknown SerialException reading function call: %s", e)
+            return ""
     except (TypeError,OSError) as e:
         logger.warning("TypeError/OSError reading function call: %s", e)
         return ""
@@ -239,10 +240,11 @@ def worker():
         
         # Run the function call and send the result
         result_string = run_function(func_call)
+        print(f"Result: {result_string}")
         try:
-            state.transport.serial.write(f"{result_string}\r\n".encode())
-            if result_string:
-                state.transport.read_until(8,result_string.encode()) # clean up the acknowledgment
+            state.transport.serial.write(f"{result_string}\n".encode())
+            # ack = state.transport.read_until(1,result_string.encode()) # clean up the acknowledgment
+            # print(f"Ack: {ack}")
         except (serial.serialutil.SerialException, OSError) as e:
             logger.error(f"Error writing result to serial: {e}")
             
