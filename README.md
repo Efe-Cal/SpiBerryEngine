@@ -108,8 +108,10 @@ Copy the contents of [raspi-util-class.py](raspi-util-class.py) and paste it at 
 raspi = Raspi()
 
 # Register devices
-servo = raspi.register_device("servo", "my_servo", "17")
+servo = raspi.register_device("servo", "s1", "14","0","180","0.00095","0.0028","10")
+# Parameters are: type, name, pin, min_angle, max_angle, min_pulse, max_pulse, start_angle
 distance_sensor = raspi.register_device("distance_sensor", "my_sensor", "15", "16", "4")
+# Parameters are: type, name, trigger_pin, echo_pin, max_distance_m
 
 # Use devices
 servo.set_angle(90)
