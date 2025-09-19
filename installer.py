@@ -85,6 +85,7 @@ requirements_file = "requirements.txt"
 
 # --- Main logic ---
 if not os.path.exists("dependencies.tar.gz"):
+    # This code exists to install the dependencies but using the dependencies archive in the repo is strongly encouraged 
     os.makedirs("dependencies", exist_ok=True)
     try:
         subprocess.run([
