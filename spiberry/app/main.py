@@ -4,7 +4,7 @@ import logging
 import threading
 import argparse
 import importlib
-from time import sleep, time
+from time import sleep
 
 import gpiozero
 from gpiozero import RGBLED, Button
@@ -39,7 +39,9 @@ parser.add_argument('--button', type=int, default=17, help='GPIO pin for button'
 parser.add_argument('--red', type=int, default=0, help='GPIO pin for RGBLED red')
 parser.add_argument('--green', type=int, default=11, help='GPIO pin for RGBLED green')
 parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue')
+parser.add_argument('code_path', nargs='?', default='robot_code.py', help='Path to the robot code file')
 args = parser.parse_args()
+ROBOT_CODE = args.code_path
 
 rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
 button = Button(args.button,pull_up=True)
@@ -62,7 +64,7 @@ except ImportError:
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
     logger.warning("raspi_functions module not found")
 
-with open("robot_code.py","r") as f:
+with open(ROBOT_CODE,"r") as f:
     code = f.read()
     logger.info("Loaded robot_code.py.")
 
@@ -73,8 +75,8 @@ class HotReloadHandler(FileSystemEventHandler):
 
     def on_modified(self, event):
         global code
-        if event.src_path.endswith("robot_code.py"):
-            with open("robot_code.py", "r") as f:
+        if event.src_path.endswith(ROBOT_CODE):
+            with open(ROBOT_CODE, "r") as f:
                 new_code = f.read()
                 if new_code != self.last_code:
                     logger.info("Hot reloaded robot_code.py")
@@ -253,63 +255,67 @@ def worker():
     # Blink green 2 times
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=False)
 
-try:
-    rgbLED.color = (0,1,0)  # green
-    logger.info("System ready. Waiting for button press.")
-    while True:
-        if button.is_pressed:
-            if work_event.is_set():
-                logger.info("Button pressed, stopping work...")
-                # Stop the robot
-                work_event.clear()
-                stop(state)
-                # Blink red 3 times
-                rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
-                sleep(0.2)
-                rgbLED.color = (0,1,0)  # green
-            else:
-                # Reload the code and raspi_functions module
-                with open("robot_code.py","r") as f:
-                    new_code = f.read()
-                    if new_code != code:
-                        logger.info("Reloaded robot_code.py")
-                        # Blink cyan 3 times (background)
-                        rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
-                    code = new_code
-                old_raspi_funcs = len(raspi_functions.__dict__.keys())
-                importlib.reload(raspi_functions)
-                if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
-                    rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
-                    logger.info("Reloaded raspi_functions module.")
-                
-                # Check the serial connection
-                if not state.transport.serial.is_open:
-                    logger.error("Serial port is not open, reconnecting...")
-                    commands.do_disconnect(state)
-                    commands.do_connect(state)
+def main():
+    try:
+        rgbLED.color = (0,1,0)  # green
+        logger.info("System ready. Waiting for button press.")
+        while True:
+            if button.is_pressed:
+                if work_event.is_set():
+                    logger.info("Button pressed, stopping work...")
+                    # Stop the robot
+                    work_event.clear()
+                    stop(state)
+                    # Blink red 3 times
+                    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
+                    sleep(0.2)
+                    rgbLED.color = (0,1,0)  # green
                 else:
-                    state.transport.serial.flushInput()
-                    state.transport.serial.flushOutput()
+                    # Reload the code and raspi_functions module
+                    with open(ROBOT_CODE,"r") as f:
+                        new_code = f.read()
+                        if new_code != code:
+                            logger.info("Reloaded robot_code.py")
+                            # Blink cyan 3 times (background)
+                            rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                        code = new_code
+                    old_raspi_funcs = len(raspi_functions.__dict__.keys())
+                    importlib.reload(raspi_functions)
+                    if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
+                        rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                        logger.info("Reloaded raspi_functions module.")
+                    
+                    # Check the serial connection
+                    if not state.transport.serial.is_open:
+                        logger.error("Serial port is not open, reconnecting...")
+                        commands.do_disconnect(state)
+                        commands.do_connect(state)
+                    else:
+                        state.transport.serial.flushInput()
+                        state.transport.serial.flushOutput()
 
-                # Start the worker thread
-                work_event.set()
-                worker_thread = threading.Thread(target=worker)
-                worker_thread.start()
-                logger.info("Button pressed, starting work...")
-                rgbLED.color = (1,1,0)  # yellow
+                    # Start the worker thread
+                    work_event.set()
+                    worker_thread = threading.Thread(target=worker)
+                    worker_thread.start()
+                    logger.info("Button pressed, starting work...")
+                    rgbLED.color = (1,1,0)  # yellow
 
-            sleep(0.2)  # Debounce delay
-except Exception as e:
-    logger.exception(f"Error occurred: {e}")
-    sys.exit(1)
-except KeyboardInterrupt:
-    logger.info("KeyboardInterrupt received, stopping...")
-    if work_event.is_set():
-        work_event.clear()
-        stop(state)
-    else:
-        logger.info("No work to stop.")
-    rgbLED.off()
-finally:
-    observer.stop()
-    observer.join()
+                sleep(0.2)  # Debounce delay
+    except Exception as e:
+        logger.exception(f"Error occurred: {e}")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        logger.info("KeyboardInterrupt received, stopping...")
+        if work_event.is_set():
+            work_event.clear()
+            stop(state)
+        else:
+            logger.info("No work to stop.")
+        rgbLED.off()
+    finally:
+        observer.stop()
+        observer.join()
+
+if __name__ == "__main__":
+    main()
