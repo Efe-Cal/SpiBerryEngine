@@ -85,7 +85,8 @@ def reexec_in_venv(python, extract_dir):
         *sys.argv[1:],
     ]
 
-    os.execve(cmd[0], cmd, env)
+    result = subprocess.run(cmd, env=env)
+    sys.exit(result.returncode)
 
 
 def main():
