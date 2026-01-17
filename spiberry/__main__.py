@@ -95,7 +95,7 @@ def main():
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " " + str(extract_dir / "app" / "main.py"))
+        service = service.replace("<execstart>", str(python) + " -m app.main")
         service = service.replace("<workingdirectory>", str(extract_dir))
         template.write_text(service)
 
