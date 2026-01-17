@@ -99,9 +99,8 @@ def main():
         service = template.read_text()
         service = service.replace("<execstart>", str(python) + " -m app.main")
         service = service.replace("<workingdirectory>", str(extract_dir))
-        template.write_text(service)
-
-        shutil.copyfile(template, "/etc/systemd/system/sbe.service")
+        destination = Path("/etc/systemd/system/sbe.service")
+        destination.write_text(service)
         subprocess.check_call(["systemctl", "daemon-reload"])
         subprocess.check_call(["systemctl", "enable", "sbe.service"])
         subprocess.check_call(["systemctl", "start", "--now", "sbe.service"])
