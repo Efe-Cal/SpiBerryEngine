@@ -11,3 +11,7 @@ venv/
 
 **/*dist*/
 **/*build*/
+
+wheels/
+
+*.exe

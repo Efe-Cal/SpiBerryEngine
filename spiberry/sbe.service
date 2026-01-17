@@ -4,8 +4,8 @@ After=multi-user.target
 Wants=network.target
 
 [Service]
-ExecStart=/home/pi/ro/venv/bin/python /home/pi/ro/SpiBerryEngine.py
-WorkingDirectory=/home/pi/ro
+ExecStart=<execstart>
+WorkingDirectory=<workingdirectory>
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure

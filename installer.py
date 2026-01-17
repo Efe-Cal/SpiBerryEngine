@@ -1,5 +1,5 @@
+# Deprecated
 
-# --- Tkinter GUI for argument input ---
 import os
 import subprocess
 import tarfile
