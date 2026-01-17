@@ -29,12 +29,12 @@ def extract_if_needed(zip_path, target):
             
             # Extract files
             z.extractall(target)
-    except (zipfile.BadZipFile, OSError, FileNotFoundError, PermissionError) as e:
+    except (zipfile.BadZipFile, OSError) as e:
         # Clean up target directory if extraction fails
         if target.exists():
             try:
                 shutil.rmtree(target)
-            except Exception:
+            except OSError:
                 # Ignore cleanup errors to preserve original exception
                 pass
         raise RuntimeError(f"Failed to extract {zip_path}: {e}") from e
