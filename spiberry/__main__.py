@@ -85,8 +85,13 @@ def reexec_in_venv(python, extract_dir):
         *sys.argv[1:],
     ]
 
-    result = subprocess.run(cmd, env=env)
-    sys.exit(result.returncode)
+    try:
+        result = subprocess.run(cmd, env=env)
+        # Handle None returncode (e.g., terminated by signal on Unix)
+        sys.exit(result.returncode if result.returncode is not None else 1)
+    except Exception as e:
+        print(f"Failed to execute command: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def main():
