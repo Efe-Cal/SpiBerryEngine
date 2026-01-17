@@ -19,8 +19,25 @@ def extract_if_needed(zip_path, target):
     if target.exists():
         return
 
-    with zipfile.ZipFile(zip_path) as z:
-        z.extractall(target)
+    # Validate zip file before extraction
+    try:
+        with zipfile.ZipFile(zip_path) as z:
+            # Test zip file integrity
+            bad_file = z.testzip()
+            if bad_file is not None:
+                raise zipfile.BadZipFile(f"Corrupted file in archive: {bad_file}")
+            
+            # Extract files
+            z.extractall(target)
+    except (zipfile.BadZipFile, OSError) as e:
+        # Clean up target directory if extraction fails
+        if target.exists():
+            try:
+                shutil.rmtree(target)
+            except OSError:
+                # Ignore cleanup errors to preserve original exception
+                pass
+        raise RuntimeError(f"Failed to extract {zip_path}: {e}") from e
 
 
 def create_venv(venv_path):
