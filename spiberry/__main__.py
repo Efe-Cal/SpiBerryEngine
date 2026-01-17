@@ -103,7 +103,7 @@ def main():
         destination.write_text(service)
         subprocess.check_call(["systemctl", "daemon-reload"])
         subprocess.check_call(["systemctl", "enable", "sbe.service"])
-        subprocess.check_call(["systemctl", "start", "--now", "sbe.service"])
+        subprocess.check_call(["systemctl", "start", "sbe.service"])
     else:
         reexec_in_venv(python, extract_dir)
 
