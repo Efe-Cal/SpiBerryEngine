@@ -89,7 +89,7 @@ def reexec_in_venv(python, extract_dir):
         result = subprocess.run(cmd, env=env)
         # Handle None returncode (e.g., terminated by signal on Unix)
         sys.exit(result.returncode if result.returncode is not None else 1)
-    except Exception as e:
+    except (OSError, subprocess.SubprocessError) as e:
         print(f"Failed to execute command: {e}", file=sys.stderr)
         sys.exit(1)
 
