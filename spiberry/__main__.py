@@ -69,9 +69,11 @@ def reexec_in_venv(python, extract_dir):
 
 def main():
     # is running root?
-    if os.name != "nt" and os.geteuid() != 0:
-        print("This application must be run as root. Please use sudo.")
-        sys.exit(1)
+    if os.name != "nt":
+        geteuid = getattr(os, "geteuid", None)
+        if geteuid is not None and geteuid() != 0:
+            print("This application must be run as root. Please use sudo.")
+            sys.exit(1)
 
     zip_path = Path(__file__).resolve()
     work_dir = zip_path.parent
