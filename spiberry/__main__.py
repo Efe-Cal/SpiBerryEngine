@@ -72,7 +72,11 @@ def pip_install(python, extract_dir):
 
 def reexec_in_venv(python, extract_dir):
     env = os.environ.copy()
-    env["PYTHONPATH"] = str(extract_dir)
+    existing_pythonpath = env.get("PYTHONPATH")
+    if existing_pythonpath:
+        env["PYTHONPATH"] = str(extract_dir) + os.pathsep + existing_pythonpath
+    else:
+        env["PYTHONPATH"] = str(extract_dir)
 
     cmd = [
         str(python),
