@@ -198,7 +198,7 @@ def run_function(func_call:str):
                 logger.info(f"Evaluating function call: {func_call}")
                 result_string = eval(func_call)
             except(NameError, AttributeError)as e:
-                rgbLED.blink("blue", duration=0.3, count=2)
+                rgbLED.blink(on_time=0.3, off_time=0.3, n=2, on_color=(0, 0, 1), off_color=(0, 0, 0), background=False)
                 logger.warning(f"NameError/AttributeError in function call '{func_call}': {e}")
                 result_string = ""
             except Exception as e:

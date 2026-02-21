@@ -14,4 +14,5 @@ venv/
 
 wheels/
 
+*.pyz
 *.exe
