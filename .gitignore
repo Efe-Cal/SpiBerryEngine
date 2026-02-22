@@ -16,3 +16,5 @@ wheels/
 
 *.pyz
 *.exe
+
+*.pt

@@ -40,6 +40,7 @@ parser.add_argument('--red', type=int, default=0, help='GPIO pin for RGBLED red'
 parser.add_argument('--green', type=int, default=11, help='GPIO pin for RGBLED green')
 parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue')
 parser.add_argument('code_path', nargs='?', default='robot_code.py', help='Path to the robot code file')
+parser.add_argument('--vision', action='store_true', default=False, help='Enable vision module')
 args = parser.parse_args()
 ROBOT_CODE = args.code_path
 
@@ -63,6 +64,11 @@ except ImportError:
     # Blink red 2 times
     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
     logger.warning("raspi_functions module not found")
+
+if args.vision:
+    import vision
+    logger.info("Vision module loaded.")
+
 
 with open(ROBOT_CODE,"r") as f:
     code = f.read()

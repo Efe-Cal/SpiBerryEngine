@@ -69,6 +69,29 @@ def pip_install(python, extract_dir):
 
     subprocess.check_call(cmd)
 
+def install_vision(python):
+    
+    apt_cmd = [
+        "sudo",
+        "apt",
+        "install",
+        "-y",
+        "python3-picamera2",
+        "--no-install-recommends",
+    ]
+    subprocess.check_call(apt_cmd)
+    
+    
+    pip_cmd = [
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "ultralytics[export]",
+        "opencv-python",
+    ]
+    
+    subprocess.check_call(pip_cmd)
 
 def reexec_in_venv(python, extract_dir):
     env = os.environ.copy()
@@ -118,13 +141,15 @@ def main():
         create_venv(venv_path)
         python = venv_python(venv_path)
         pip_install(python, extract_dir)
+        if "--vision" in sys.argv:
+            install_vision(python)
     else:
         python = venv_python(venv_path)
 
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m app.main")
+        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(sys.argv[1:]))
         service = service.replace("<workingdirectory>", str(extract_dir))
         destination = Path("/etc/systemd/system/sbe.service")
         destination.write_text(service)
