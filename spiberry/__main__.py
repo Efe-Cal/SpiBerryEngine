@@ -5,10 +5,19 @@ import venv
 import shutil
 import zipfile
 from pathlib import Path
+from argparse import ArgumentParser
 
 APP_NAME = "spiberry"
 VENV_DIR = ".venv"
 EXTRACT_DIR = ".bootstrap"
+
+argument_parser = ArgumentParser(description="SpiBerry Engine")
+argument_parser.add_argument(
+    "--vision",
+    type=int,
+    choices=[0, 1, 2],
+    help="Install vision dependencies level: 0=picamera2, 1=picamera2+opencv, 2=picamera2+opencv+ultralytics",
+)
 
 
 def running_in_venv():
@@ -69,31 +78,35 @@ def pip_install(python, extract_dir):
 
     subprocess.check_call(cmd)
 
-def install_vision(python):
-    
-    apt_cmd = [
-        "sudo",
-        "apt",
-        "install",
-        "-y",
-        "python3-picamera2",
-        "--no-install-recommends",
-    ]
-    subprocess.check_call(apt_cmd)
-    
-    
-    pip_cmd = [
-        str(python),
-        "-m",
-        "pip",
-        "install",
-        "ultralytics[export]",
-        "opencv-python",
-    ]
-    
-    subprocess.check_call(pip_cmd)
+def install_vision(python, libs=None):
+    if libs is None:
+        libs = ["python3-picamera2", "ultralytics[export]", "opencv-python"]
+    libs = list(libs)
 
-def reexec_in_venv(python, extract_dir):
+    if "python3-picamera2" in libs:
+        apt_cmd = [
+            "sudo",
+            "apt",
+            "install",
+            "-y",
+            "python3-picamera2",
+            "--no-install-recommends",
+        ]
+        subprocess.check_call(apt_cmd)
+        libs.remove("python3-picamera2")
+
+    if libs:
+        pip_cmd = [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            *libs,
+        ]
+
+        subprocess.check_call(pip_cmd)
+
+def reexec_in_venv(python, extract_dir, app_args):
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
     if existing_pythonpath:
@@ -105,7 +118,7 @@ def reexec_in_venv(python, extract_dir):
         str(python),
         "-m",
         "app.main",
-        *sys.argv[1:],
+        *app_args,
     ]
 
     try:
@@ -118,6 +131,8 @@ def reexec_in_venv(python, extract_dir):
 
 
 def main():
+    bootstrap_args, app_args = argument_parser.parse_known_args(sys.argv[1:])
+
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
@@ -144,13 +159,18 @@ def main():
     else:
         python = venv_python(venv_path)
 
-    if "--vision" in sys.argv:
-        install_vision(python)
+    if bootstrap_args.vision is not None:
+        vision_libs = ["python3-picamera2"]
+        if bootstrap_args.vision >= 1:
+            vision_libs.append("opencv-python")
+        if bootstrap_args.vision >= 2:
+            vision_libs.append("ultralytics[export]")
+        install_vision(python, vision_libs)
 
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(sys.argv[1:]))
+        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(app_args))
         service = service.replace("<workingdirectory>", str(extract_dir))
         destination = Path("/etc/systemd/system/sbe.service")
         destination.write_text(service)
@@ -158,7 +178,7 @@ def main():
         subprocess.check_call(["systemctl", "enable", "sbe.service"])
         subprocess.check_call(["systemctl", "start", "sbe.service"])
     else:
-        reexec_in_venv(python, extract_dir)
+        reexec_in_venv(python, extract_dir, app_args)
 
 
 if __name__ == "__main__":

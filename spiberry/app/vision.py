@@ -28,11 +28,11 @@ class Camera:
             self.picam2.stop()
         return image
 
-class Vision(Camera):
-    def __init__(self, model_path="yolo26n.pt",**kwargs):
-        super().__init__(**kwargs)
+class Vision:
+    def __init__(self, model_path="yolo26n.pt", camera:Camera=None):
         self.loaded_models = {}
         self.load_model(model_path)
+        self.camera = camera if camera else Camera()
         
     def load_model(self, model):
         model_name = model.split(".")[0] 
@@ -64,11 +64,8 @@ class Vision(Camera):
         return detections
 
     def find_objects(self, model_name):
-        # Take a picture using the Raspberry Pi camera
-        picam2 = Picamera2()
-        picam2.start()
-        image = picam2.capture_array()
-        picam2.stop()
+
+        image = self.camera.take_picture()
         
         # Detect objects in the captured image
         detections = self.detect_objects_from_image(image, model_name)
@@ -83,14 +80,14 @@ class Vision(Camera):
         
         return detections, center_points
 
-class ContourFinder(Camera):
+class ContourFinder:
     MORPHOLOGY_KERNEL_SIZE = (7, 7)  # Kernel size for morphological operations
     DIST_TRESH = 0.4  # Distance threshold for distance transform
     EXTENSION_OFFSET = (10, 30, 30)  # Offset for extending color ranges
     FALLBACK_CONFIG = None # {"big_box_crop": [1735, 657, 172, 122], "color_ranges": {"red": [[[0, 143, 54], [12, 253, 164]], [[162, 143, 54], [179, 253, 164]]], "green": [[[60, 137, 13], [90, 247, 123]]], "blue": [[[94, 173, 45], [124, 255, 155]]], "yellow": [[[7, 170, 99], [37, 255, 209]]]}}
     
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, camera:Camera=None):
+        self.camera = camera if camera else Camera()
         self.config = self.load_config()
     
     def closeness_to_center(self, img, detection):
@@ -218,24 +215,19 @@ class ContourFinder(Camera):
             dist_transform = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
             ret, sure_fg = cv2.threshold(dist_transform,self.DIST_TRESH*dist_transform.max(),255,0)
 
+            # TODO: Here dist_transform is used to find contours.
+            # Then why do we threshold it to get sure_fg?
+            # Test with both and see which one gives better results.
+            
             # Find contours
             sure_fg = sure_fg.astype(np.uint8) 
             contours, _ = cv2.findContours(dist_transform.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             # Merge contours that are close to each other and calculate total area
             contours = self.merge_close_contours(contours, d_thresh=20)
-            
-            contour_areas = [cv2.contourArea(cnt) for cnt in contours]
-            
-            for area in contour_areas:
-                if filters:
-                    if "min_area" in filters and area < filters["min_area"]:
-                        continue
-                    if "max_area" in filters and area > filters["max_area"]:
-                        continue
-                else:
-                    if area < 100:  # default min area threshold
-                        continue
+                        
+            if filters and filters["min_area"] is not None and filters["max_area"] is not None:
+                contours = [c for c in contours if filters['min_area'] < cv2.contourArea(c) < filters['max_area']]
             
             if not contours:
                 continue
