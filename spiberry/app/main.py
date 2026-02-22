@@ -66,7 +66,7 @@ except ImportError:
     logger.warning("raspi_functions module not found")
 
 if args.vision:
-    import vision
+    import app.vision
     logger.info("Vision module loaded.")
 
 

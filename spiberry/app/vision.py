@@ -4,6 +4,7 @@ import subprocess
 from typing import Literal, TypedDict
 
 import numpy as np
+import cv2
 from ultralytics import YOLO
 from picamera2 import Picamera2
 
@@ -11,18 +12,21 @@ class Camera:
     def __init__(self, take_picture_method:Literal["picamera2", "rpicam-still"]="picamera2", camera_config=None):
         self.take_picture_method = take_picture_method
         self.camera_config = camera_config
-    
+        if self.take_picture_method == "picamera2":
+            self.picam2 = Picamera2()
+            if camera_config:
+                self.picam2.configure(camera_config)
+        
     #TODO Handle camera config
     def take_picture(self):
         if self.take_picture_method == "rpicam-still":
             subprocess.run(["rpicam-still", "-o", "captured_image.jpg", "--timeout", "1"])
-            return "captured_image.jpg"
+            image = cv2.imread("captured_image.jpg")
         elif self.take_picture_method == "picamera2":
-            picam2 = Picamera2()
-            picam2.start()
-            image = picam2.capture_array()
-            picam2.stop()
-            return image
+            self.picam2.start()
+            image = self.picam2.capture_array()
+            self.picam2.stop()
+        return image
 
 class Vision(Camera):
     def __init__(self, model_path="yolo26n.pt",**kwargs):
@@ -94,6 +98,7 @@ class ContourFinder(Camera):
         img_cx, img_cy = img.shape[1]//2, img.shape[0]//2
         return np.sqrt((cx - img_cx)**2 + (cy - img_cy)**2)
     
+    @staticmethod
     def merge_close_contours(contours, d_thresh=20):
         """
         Merge contours whose minimum point-to-point distance <= d_thresh (pixels).

@@ -41,7 +41,7 @@ def extract_if_needed(zip_path, target):
 
 
 def create_venv(venv_path):
-    builder = venv.EnvBuilder(with_pip=True)
+    builder = venv.EnvBuilder(with_pip=True, system_site_packages=True)
     builder.create(venv_path)
 
 
@@ -141,10 +141,11 @@ def main():
         create_venv(venv_path)
         python = venv_python(venv_path)
         pip_install(python, extract_dir)
-        if "--vision" in sys.argv:
-            install_vision(python)
     else:
         python = venv_python(venv_path)
+
+    if "--vision" in sys.argv:
+        install_vision(python)
 
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
