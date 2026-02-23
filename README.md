@@ -55,6 +55,19 @@ The service will:
 - Run as the `pi` user
 - Log output to the system journal
 
+## Camera Configuration
+
+SpiBerryEngine supports two camera capture methods: `picamera2` (recommended for Raspberry Pi OS) and `rpicam-still` (command-line tool). Both methods support comprehensive configuration options.
+
+#### Configuration Options Reference
+
+See [examples/camera_config_examples.py](examples/camera_config_examples.py) for comprehensive examples and the [picamera2 manual](https://datasheets.raspberrypi.com/camera/picamera2-manual.pdf) and [rpicam-still documentation](https://www.raspberrypi.com/documentation/computers/camera_software.html) for complete option lists.
+
+## Vision Processing
+SpiBerryEngine includes a `Vision` and `ContourDetector` classes that provides some image processing capabilities using OpenCV and object detection using Ultralytics. You can use the `take_picture()` method to capture an image and then apply various processing methods like `detect_objects()`, `find_contours()`, or custom OpenCV operations.   
+See [examples/vision_example.py](examples/vision_examples.py) for usage examples.
+
+
 ## Hardware Setup
 
 Connect the following components to your Raspberry Pi:

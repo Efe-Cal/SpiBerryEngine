@@ -1,6 +1,5 @@
 import json
 import os
-import subprocess
 from typing import Literal, TypedDict
 
 import numpy as np
@@ -9,32 +8,10 @@ from scipy.spatial import cKDTree
 
 import importlib.util
 
+from .camera import Camera
+
 if importlib.util.find_spec("ultralytics") is not None:
     from ultralytics import YOLO
-
-if importlib.util.find_spec("picamera2") is not None:
-    from picamera2 import Picamera2
-
-
-class Camera:
-    def __init__(self, take_picture_method:Literal["picamera2", "rpicam-still"]="picamera2", camera_config=None):
-        self.take_picture_method = take_picture_method
-        self.camera_config = camera_config
-        if self.take_picture_method == "picamera2":
-            self.picam2 = Picamera2()
-            if camera_config:
-                self.picam2.configure(camera_config)
-        
-    #TODO Handle camera config
-    def take_picture(self):
-        if self.take_picture_method == "rpicam-still":
-            subprocess.run(["rpicam-still", "-o", "captured_image.jpg", "--timeout", "1"])
-            image = cv2.imread("captured_image.jpg")
-        elif self.take_picture_method == "picamera2":
-            self.picam2.start()
-            image = self.picam2.capture_array()
-            self.picam2.stop()
-        return image
 
 class Vision:
     def __init__(self, model_path="yolo26n.pt", camera:Camera=None):
@@ -88,7 +65,7 @@ class Vision:
         
         return detections, center_points
 
-class ContourFinder:
+class ContourDetector:
     MORPHOLOGY_KERNEL_SIZE = (7, 7)  # Kernel size for morphological operations
     DIST_TRESH = 0.4  # Distance threshold for distance transform
     EXTENSION_OFFSET = (10, 30, 30)  # Offset for extending color ranges
