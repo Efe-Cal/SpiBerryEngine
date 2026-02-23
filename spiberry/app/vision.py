@@ -202,7 +202,7 @@ class ContourFinder:
     
     def detect_contours(self, img, filters:Filters=None):
         """
-        Detects contours in the image and returns their order from left to right.
+        Detects contours in the image
         """
         # Convert to HSV color space
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
@@ -213,14 +213,12 @@ class ContourFinder:
             mask = self.build_clean_mask(hsv, ranges, kernel_size=self.MORPHOLOGY_KERNEL_SIZE)
 
             dist_transform = cv2.distanceTransform(mask, cv2.DIST_L2, 5)
-            ret, sure_fg = cv2.threshold(dist_transform,self.DIST_TRESH*dist_transform.max(),255,0)
-
-            # TODO: Here dist_transform is used to find contours.
-            # Then why do we threshold it to get sure_fg?
-            # Test with both and see which one gives better results.
+            
+            # Commenting out for now as it seems to be less effective than distance transform alone
+            # ret, sure_fg = cv2.threshold(dist_transform,self.DIST_TRESH*dist_transform.max(),255,0)
+            # sure_fg = sure_fg.astype(np.uint8) 
             
             # Find contours
-            sure_fg = sure_fg.astype(np.uint8) 
             contours, _ = cv2.findContours(dist_transform.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
             # Merge contours that are close to each other and calculate total area
@@ -244,28 +242,19 @@ class ContourFinder:
             
                 detections.append((color, cv2.contourArea(cnt), cx, cy))
             
+        if len(detections) == 0 and self.retry_with_extended==False:
+            print("No boxes detected")
+            self.retry_with_extended = True
+            return self.detect_contours(img, self.extend_color_range(self.config["color_ranges"]))
+        if len(detections) == 0 and self.retry_with_extended==True:
+            print("No boxes detected even after extending ranges")
+            self.retry_with_extended = False
+            return None
+        
         return detections
-        # if len(detections) == 0 and self.retry_with_extended==False:
-        #     print("No boxes detected")
-        #     self.retry_with_extended = True
-        #     return self.detect_contours(img, self.extend_color_range(self.config["color_ranges"]))
-        # if len(detections) == 0 and self.retry_with_extended==True:
-        #     print("No boxes detected even after extending ranges")
-        #     return None 
-        # elif len(detections) == 1:
-        #     return detections[0][0][0]    
-        # elif len(detections) > 1:
-        #     # Normalize area and closeness to center, then combine equally
-        #     areas = np.array([d[1] for d in detections])
-        #     centers = np.array([self.closeness_to_center(img,d) for d in detections])
-        #     norm_areas = (areas - areas.min()) / (areas.ptp() if areas.ptp() > 0 else 1)
-        #     norm_centers = (centers - centers.min()) / (centers.ptp() if centers.ptp() > 0 else 1)
-        #     scores = norm_areas + (1 - norm_centers)  # larger area and closer to center preferred
-        #     best_idx = np.argmax(scores)
-        #     detection = detections[best_idx][0][0]
-        #     return detection
-
-    def crop_image(self, img, x:int, y:int, w:int, h:int) -> np.ndarray:
+    
+    @staticmethod
+    def crop_image(img, x:int, y:int, w:int, h:int) -> np.ndarray:
         return img[y:y+h, x:x+w]
 
 

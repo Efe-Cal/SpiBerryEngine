@@ -7,17 +7,8 @@ import zipfile
 from pathlib import Path
 from argparse import ArgumentParser
 
-APP_NAME = "spiberry"
-VENV_DIR = ".venv"
-EXTRACT_DIR = ".bootstrap"
-
-argument_parser = ArgumentParser(description="SpiBerry Engine")
-argument_parser.add_argument(
-    "--vision",
-    type=int,
-    choices=[0, 1, 2],
-    help="Install vision dependencies level: 0=picamera2, 1=picamera2+opencv, 2=picamera2+opencv+ultralytics",
-)
+VENV_DIR = "venv"
+EXTRACT_DIR = "spiberry_app"
 
 
 def running_in_venv():
@@ -78,7 +69,7 @@ def pip_install(python, extract_dir):
 
     subprocess.check_call(cmd)
 
-def install_vision(python, libs=None):
+def install_extra(python, libs=None):
     if libs is None:
         libs = ["python3-picamera2", "ultralytics[export]", "opencv-python"]
     libs = list(libs)
@@ -106,6 +97,114 @@ def install_vision(python, libs=None):
 
         subprocess.check_call(pip_cmd)
 
+def interactive_setup_menu():
+    """Interactive multi-select menu for library installation."""
+    libraries = [
+        ("python3-picamera2",   "Camera interface"),
+        ("opencv-python",       "Computer vision"),
+        ("ultralytics[export]", "YOLO / AI models"),
+    ]
+    selected = [False] * len(libraries)
+    name_width = max(len(name) for name, _ in libraries)
+
+    BOLD    = "\033[1m"
+    DIM     = "\033[2m"
+    RESET   = "\033[0m"
+    GREEN   = "\033[32m"
+    CYAN    = "\033[36m"
+    YELLOW  = "\033[33m"
+    MAGENTA = "\033[35m"
+    WHITE   = "\033[97m"
+
+    max_desc = max(len(d) for _, d in libraries)
+    W = 13 + name_width + max_desc + 3
+    W = max(W, 50)
+
+    def row(text, visible_len):
+        return f"  {MAGENTA}║{RESET}{text}{' ' * (W - visible_len)}{MAGENTA}║{RESET}"
+
+    def sep(left="╠", right="╣"):
+        return f"  {MAGENTA}{left}{'═' * W}{right}{RESET}"
+
+    def render():
+        out = []
+        out.append("")
+        out.append(f"  {MAGENTA}╔{'═' * W}╗{RESET}")
+
+        title = "SpiBerry Setup"
+        deco = f"✦  {title}  ✦"
+        p = (W - len(deco)) // 2
+        out.append(row(
+            f"{' ' * p}{DIM}✦{RESET}  {BOLD}{WHITE}{title}{RESET}  {DIM}✦{RESET}",
+            p + len(deco)
+        ))
+
+        out.append(sep())
+        out.append(row("", 0))
+        out.append(row(f"  {BOLD}Select libraries to install:{RESET}", 30))
+        out.append(row("", 0))
+
+        for i, (name, desc) in enumerate(libraries):
+            n = str(i + 1)
+            padded = name.ljust(name_width)
+            if selected[i]:
+                mark = f"{GREEN}●{RESET}"
+                nm = f"{GREEN}{BOLD}{padded}{RESET}"
+            else:
+                mark = f"{DIM}○{RESET}"
+                nm = f"{WHITE}{padded}{RESET}"
+
+            vis = f"   [{n}] X  {padded}   {desc}"
+            colored = f"   [{CYAN}{n}{RESET}] {mark}  {nm}   {DIM}{desc}{RESET}"
+            out.append(row(colored, len(vis)))
+
+        out.append(row("", 0))
+        out.append(sep())
+
+        ctrl_vis = f"  1-{len(libraries)} Toggle │ a All │ c Confirm │ s Skip"
+        ctrl = (
+            f"  {CYAN}1-{len(libraries)}{RESET} Toggle "
+            f"{DIM}│{RESET} {GREEN}a{RESET} All "
+            f"{DIM}│{RESET} {GREEN}c{RESET} Confirm "
+            f"{DIM}│{RESET} {YELLOW}s{RESET} Skip"
+        )
+        out.append(row(ctrl, len(ctrl_vis)))
+
+        out.append(f"  {MAGENTA}╚{'═' * W}╝{RESET}")
+        out.append("")
+
+        print("\n".join(out))
+        return len(out)
+
+    count = 0
+    while True:
+        if count > 0:
+            print(f"\033[{count + 1}A\033[J", end="")
+        count = render()
+
+        try:
+            choice = input(f"  {MAGENTA}▸{RESET} ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+
+        if choice == "s":
+            return None
+        elif choice == "c":
+            result = [libraries[i][0] for i in range(len(libraries)) if selected[i]]
+            if result:
+                names = ", ".join(result)
+                print(f"\n  {GREEN}✓{RESET} {BOLD}Installing:{RESET} {names}\n")
+            return result or None
+        elif choice == "a":
+            toggle = not all(selected)
+            selected = [toggle] * len(libraries)
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(libraries):
+                selected[idx] = not selected[idx]
+
+
 def reexec_in_venv(python, extract_dir, app_args):
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
@@ -131,7 +230,8 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
-    bootstrap_args, app_args = argument_parser.parse_known_args(sys.argv[1:])
+    interactive_setup_menu()
+    sys.exit(0)
 
     # is running root?
     if os.name != "nt":
@@ -140,7 +240,7 @@ def main():
             print("This application must be run as root. Please use sudo.")
             sys.exit(1)
 
-    zip_path = Path(__file__).resolve()
+    zip_path = Path(__file__).resolve().parent
     work_dir = zip_path.parent
     extract_dir = work_dir / EXTRACT_DIR
     venv_path = work_dir / VENV_DIR
@@ -152,25 +252,24 @@ def main():
 
     extract_if_needed(zip_path, extract_dir)
 
-    if not venv_path.exists():
+    first_setup = not venv_path.exists()
+
+    if first_setup:
         create_venv(venv_path)
         python = venv_python(venv_path)
         pip_install(python, extract_dir)
     else:
         python = venv_python(venv_path)
 
-    if bootstrap_args.vision is not None:
-        vision_libs = ["python3-picamera2"]
-        if bootstrap_args.vision >= 1:
-            vision_libs.append("opencv-python")
-        if bootstrap_args.vision >= 2:
-            vision_libs.append("ultralytics[export]")
-        install_vision(python, vision_libs)
+    if first_setup:
+        extra_libs = interactive_setup_menu()
+        if extra_libs:
+            install_extra(python, extra_libs)
 
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(app_args))
+        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(sys.argv[1:]))
         service = service.replace("<workingdirectory>", str(extract_dir))
         destination = Path("/etc/systemd/system/sbe.service")
         destination.write_text(service)
@@ -178,7 +277,7 @@ def main():
         subprocess.check_call(["systemctl", "enable", "sbe.service"])
         subprocess.check_call(["systemctl", "start", "sbe.service"])
     else:
-        reexec_in_venv(python, extract_dir, app_args)
+        reexec_in_venv(python, extract_dir, sys.argv[1:])
 
 
 if __name__ == "__main__":
