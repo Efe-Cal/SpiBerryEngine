@@ -6,6 +6,27 @@ import shutil
 import zipfile
 from pathlib import Path
 
+
+def _getch():
+    """Read a single keypress without waiting for Enter (cross-platform)."""
+    if os.name == "nt":
+        import msvcrt
+        ch = msvcrt.getwch()
+    else:
+        import tty
+        import termios
+        fd = sys.stdin.fileno()
+        old = termios.tcgetattr(fd)
+        try:
+            tty.setraw(fd)
+            ch = sys.stdin.read(1)
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+    if ch in ("\x03", "\x04"):
+        raise KeyboardInterrupt
+    return ch
+
+
 VENV_DIR = "venv"
 EXTRACT_DIR = "spiberry_app"
 
@@ -191,22 +212,26 @@ def interactive_setup_menu():
     count = 0
     while True:
         if count > 0:
-            print(f"\033[{count + 1}A\033[J", end="")
+            print(f"\033[{count}A\033[J", end="")
         count = render()
+        print(f"  {MAGENTA}▸{RESET} ", end="", flush=True)
 
         try:
-            choice = input(f"  {MAGENTA}▸{RESET} ").strip().lower()
+            choice = _getch().lower()
         except (EOFError, KeyboardInterrupt):
             print()
             return None
 
         if choice == "s":
+            print()
             return None
         elif choice == "c":
             result = [libraries[i][0] for i in range(len(libraries)) if selected[i]]
             if result:
                 names = ", ".join(result)
-                print(f"\n  {GREEN}✓{RESET} {BOLD}Installing:{RESET} {names}\n")
+                print(f"\n\n  {GREEN}✓{RESET} {BOLD}Installing:{RESET} {names}\n")
+            else:
+                print()
             return result or None
         elif choice == "a":
             toggle = not all(selected)
@@ -242,6 +267,7 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
+    interactive_setup_menu()
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
