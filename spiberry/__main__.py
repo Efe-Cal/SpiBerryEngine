@@ -5,7 +5,6 @@ import venv
 import shutil
 import zipfile
 from pathlib import Path
-from argparse import ArgumentParser
 
 VENV_DIR = "venv"
 EXTRACT_DIR = "spiberry_app"
@@ -243,9 +242,6 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
-    interactive_setup_menu()
-    sys.exit(0)
-
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
