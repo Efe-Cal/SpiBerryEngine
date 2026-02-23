@@ -71,7 +71,7 @@ def pip_install(python, extract_dir):
 
 def install_extra(python, libs=None):
     if libs is None:
-        libs = ["python3-picamera2", "ultralytics[export]", "opencv-python"]
+        libs = ["python3-picamera2", "ultralytics[export]", "opencv-python", "python3-scipy"]
     libs = list(libs)
 
     if "python3-picamera2" in libs:
@@ -85,6 +85,18 @@ def install_extra(python, libs=None):
         ]
         subprocess.check_call(apt_cmd)
         libs.remove("python3-picamera2")
+    
+    if "python3-scipy" in libs:
+        apt_cmd = [
+            "sudo",
+            "apt",
+            "install",
+            "-y",
+            "python3-scipy",
+            "--no-install-recommends",
+        ]
+        subprocess.check_call(apt_cmd)
+        libs.remove("python3-scipy")
 
     if libs:
         pip_cmd = [
@@ -100,9 +112,10 @@ def install_extra(python, libs=None):
 def interactive_setup_menu():
     """Interactive multi-select menu for library installation."""
     libraries = [
-        ("python3-picamera2",   "Camera interface"),
+        ("python3-picamera2",   "Programmatic camera access"),
         ("opencv-python",       "Computer vision"),
         ("ultralytics[export]", "YOLO / AI models"),
+        ("python3-scipy",       "Scientific computing"),
     ]
     selected = [False] * len(libraries)
     name_width = max(len(name) for name, _ in libraries)

@@ -5,8 +5,16 @@ from typing import Literal, TypedDict
 
 import numpy as np
 import cv2
-from ultralytics import YOLO
-from picamera2 import Picamera2
+from scipy.spatial import cKDTree
+
+import importlib.util
+
+if importlib.util.find_spec("ultralytics") is not None:
+    from ultralytics import YOLO
+
+if importlib.util.find_spec("picamera2") is not None:
+    from picamera2 import Picamera2
+
 
 class Camera:
     def __init__(self, take_picture_method:Literal["picamera2", "rpicam-still"]="picamera2", camera_config=None):
@@ -105,7 +113,8 @@ class ContourFinder:
             return []
 
         n = len(contours)
-        rects = [cv2.boundingRect(c) for c in contours]  # (x,y,w,h)
+
+        # --- Union-Find ---
         parent = list(range(n))
 
         def find(x):
@@ -113,47 +122,57 @@ class ContourFinder:
                 parent[x] = parent[parent[x]]
                 x = parent[x]
             return x
+
         def union(a, b):
             pa, pb = find(a), find(b)
             if pa != pb:
                 parent[pb] = pa
 
-        def bbox_dist(r1, r2):
-            x1,y1,w1,h1 = r1
-            x2,y2,w2,h2 = r2
+        # --- Pre-compute reshaped point arrays and KD-trees once ---
+        pts_list  = [c.reshape(-1, 2).astype(np.float32) for c in contours]
+        trees     = [cKDTree(p) for p in pts_list]
+        rects     = [cv2.boundingRect(c) for c in contours]
+
+        # Inline bbox gap as a fast pre-filter (avoids a function-call per pair)
+        def bbox_gap(r1, r2):
+            x1, y1, w1, h1 = r1
+            x2, y2, w2, h2 = r2
             x_gap = max(0, max(x1, x2) - min(x1 + w1, x2 + w2))
             y_gap = max(0, max(y1, y2) - min(y1 + h1, y2 + h2))
-            return (x_gap**2 + y_gap**2)**0.5
+            return x_gap, y_gap
 
-        def contour_min_dist(c1, c2):
-            p1 = c1.reshape(-1, 2).astype(np.float32)
-            p2 = c2.reshape(-1, 2).astype(np.float32)
-            # vectorized pairwise distances
-            d = np.sqrt(((p1[:, None, :] - p2[None, :, :]) ** 2).sum(axis=2))
-            return float(d.min())
-
-        # build connectivity (fast bbox filter, then exact distance)
         for i in range(n):
             for j in range(i + 1, n):
-                if bbox_dist(rects[i], rects[j]) > d_thresh:
+                xg, yg = bbox_gap(rects[i], rects[j])
+
+                # Euclidean bbox gap is a lower-bound on true contour distance.
+                # If it already exceeds threshold, skip exact check.
+                if (xg * xg + yg * yg) > d_thresh * d_thresh:
                     continue
-                if contour_min_dist(contours[i], contours[j]) <= d_thresh:
+
+                # KD-tree query: for each point in the smaller contour,
+                # find the nearest point in the larger one.
+                if len(pts_list[i]) <= len(pts_list[j]):
+                    min_dist = trees[j].query(pts_list[i], workers=1)[0].min()
+                else:
+                    min_dist = trees[i].query(pts_list[j], workers=1)[0].min()
+
+                if min_dist <= d_thresh:
                     union(i, j)
 
-        # group and merge
+        # --- Group and merge ---
         groups = {}
         for i in range(n):
-            root = find(i)
-            groups.setdefault(root, []).append(i)
+            groups.setdefault(find(i), []).append(i)
 
         merged = []
         for idxs in groups.values():
-            pts = np.vstack([contours[k].reshape(-1, 2) for k in idxs])
+            pts  = np.vstack([pts_list[k] for k in idxs])   # reuse pre-reshaped arrays
             hull = cv2.convexHull(pts.astype(np.int32))
             merged.append(hull)
 
         return merged
-        
+
     def load_config(self):
         script_dir = os.path.dirname(__file__)
         config_path = os.path.join(script_dir, 'config.json')
