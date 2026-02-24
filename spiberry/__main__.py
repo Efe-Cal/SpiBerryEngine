@@ -431,7 +431,6 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
-    interactive_pin_menu()
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
