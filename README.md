@@ -8,52 +8,11 @@ I believe it can also be used with other micropython devices.
 
 ### Installing the Engine
 
-Use the [installer.exe](installer.exe) (compiled from [installer.py](installer.py)) to install SpiBerryEngine on your Raspberry Pi:
-
-1. Run the installer on your computer
-2. Enter your Raspberry Pi connection details:
-   - Remote Host (default: `raspberrypi`)
-   - Remote User (default: `pi`)
-   - Password
-   - Remote Directory (where to install)
-3. Configure GPIO pins for hardware:
-   - R pin (Red LED, default: 0)
-   - B pin (Blue LED, default: 11) 
-   - G pin (Green LED, default: 9)
-   - Button pin (default: 17)
-4. Click "Start Installation"
-
-The installer will:
-- Download and package all dependencies (make sure the dependencies archive is in the same folder as the installer)
-- Transfer files to your Raspberry Pi via SSH
-- Set up a Python virtual environment
-- Install all required packages
-- Create a `run.sh` script with your GPIO configuration
-
-### Installing as a System Service
-
-To run SpiBerryEngine automatically on boot, install it as a systemd service using [sbe.service](sbe.service):
-(Change the `User`, `WorkingDirectory`, and `ExecStart` paths as needed.)
+Transfer the `spiberry.pyz` file to your Raspberry Pi and run it:
 ```bash
-# Copy the service file to systemd
-sudo cp sbe.service /etc/systemd/system/
-
-# Reload systemd and enable the service
-sudo systemctl daemon-reload
-sudo systemctl enable sbe.service
-
-# Start the service
-sudo systemctl start sbe.service
-
-# Check service status
-sudo systemctl status sbe.service
+python spiberry.pyz
 ```
-
-The service will:
-- Start automatically on boot
-- Restart on failure
-- Run as the `pi` user
-- Log output to the system journal
+It will create a virtual environment, install dependencies and setup a system service to run the engine on boot. You can also specify GPIO pins for the RGB LED and button during installation or later using the `--set-pins` option.
 
 ## Camera Configuration
 
@@ -82,14 +41,9 @@ Connect the following components to your Raspberry Pi:
 
 ### Running Manually
 
+To run the engine manually, execute the following command on your Raspberry Pi, and optionally specify the GPIO pins for the RGB LED and button:
 ```bash
-cd /home/pi/ro  # or your installation directory
-./run.sh
-```
-
-Or with custom GPIO pins:
-```bash
-python SpiBerryEngine.py --button 11 --red 22 --green 10 --blue 9
+python spiberry.pyz --blue 11 --button 22
 ```
 
 ### Deploying Code
@@ -170,8 +124,10 @@ The RGB LED provides visual feedback for the system state:
 
 ## Files Overview
 
-- [`SpiBerryEngine.py`](SpiBerryEngine.py) - Main engine script
-- [`installer.py`](installer.py) - Installation script with GUI
+- [`main.py`](spiberry/app/main.py) - Main engine script
+- [`vision.py`](spiberry/app/vision.py) - Vision processing classes
+- [`camera.py`](spiberry/app/camera.py) - Camera capture classes
+- [`installer.py`](installer.py) - (deprecated) Installation script with GUI
 - [`deploy_robot_code.py`](deploy_robot_code.py) - Code deployment tool with GUI
 - [`raspi-util-class.py`](raspi-util-class.py) - Utility classes for robot code
 - [`sbe.service`](sbe.service) - Systemd service configuration
@@ -183,7 +139,7 @@ The RGB LED provides visual feedback for the system state:
 - Raspberry Pi running Raspberry Pi OS with Python 3
 
 ## Troubleshooting
-- Chect the RGB LED signals for error codes
+- Check the RGB LED signals for error codes
 - Ensure all dependencies are installed
 - Ensure there is no syntax error in your robot code (Spike App does not always show them)
-- Check your instalation and code deployment paths
+- Check your installation and code deployment paths

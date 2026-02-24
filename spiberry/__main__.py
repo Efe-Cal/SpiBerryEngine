@@ -30,6 +30,65 @@ def _getch():
 VENV_DIR = "venv"
 EXTRACT_DIR = "spiberry_app"
 
+# ANSI color codes for terminal styling
+class Colors:
+    BOLD    = "\033[1m"
+    DIM     = "\033[2m"
+    RESET   = "\033[0m"
+    GREEN   = "\033[32m"
+    CYAN    = "\033[36m"
+    YELLOW  = "\033[33m"
+    MAGENTA = "\033[35m"
+    WHITE   = "\033[97m"
+    RED     = "\033[31m"
+
+
+class MenuRenderer:
+    """Reusable box-drawing renderer for interactive menus."""
+    
+    def __init__(self, width, title):
+        self.width = max(width, 50)
+        self.title = title
+        self.c = Colors
+    
+    def row(self, text, visible_len):
+        """Render a row with borders and proper padding."""
+        padding = ' ' * (self.width - visible_len)
+        return f"  {self.c.MAGENTA}║{self.c.RESET}{text}{padding}{self.c.MAGENTA}║{self.c.RESET}"
+    
+    def sep(self, left="╠", right="╣"):
+        """Render a separator line."""
+        return f"  {self.c.MAGENTA}{left}{'═' * self.width}{right}{self.c.RESET}"
+    
+    def header(self):
+        """Render the menu header with title."""
+        out = []
+        out.append("")
+        out.append(f"  {self.c.MAGENTA}╔{'═' * self.width}╗{self.c.RESET}")
+        
+        deco = f"✦  {self.title}  ✦"
+        p = (self.width - len(deco)) // 2
+        out.append(self.row(
+            f"{' ' * p}{self.c.DIM}✦{self.c.RESET}  {self.c.BOLD}{self.c.WHITE}{self.title}{self.c.RESET}  {self.c.DIM}✦{self.c.RESET}",
+            p + len(deco)
+        ))
+        out.append(self.sep())
+        return out
+    
+    def footer(self):
+        """Render the menu footer."""
+        return [f"  {self.c.MAGENTA}╚{'═' * self.width}╝{self.c.RESET}", ""]
+    
+    @staticmethod
+    def clear_lines(count):
+        """Clear specified number of lines from terminal."""
+        print(f"\033[{count}A\033[J", end="")
+    
+    @staticmethod
+    def prompt():
+        """Display the input prompt."""
+        print(f"  {Colors.MAGENTA}▸{Colors.RESET} ", end="", flush=True)
+
 
 def running_in_correct_venv():
     if sys.prefix == sys.base_prefix or Path(sys.prefix) != Path(__file__).resolve().parent.parent / VENV_DIR:
@@ -136,7 +195,7 @@ def install_extra(python, libs=None):
 
         subprocess.check_call(pip_cmd)
 
-def interactive_setup_menu():
+def interactive_installation_menu():
     """Interactive multi-select menu for library installation."""
     libraries = [
         ("python3-picamera2",   "Programmatic camera access"),
@@ -146,72 +205,45 @@ def interactive_setup_menu():
     ]
     selected = [False] * len(libraries)
     name_width = max(len(name) for name, _ in libraries)
-
-    BOLD    = "\033[1m"
-    DIM     = "\033[2m"
-    RESET   = "\033[0m"
-    GREEN   = "\033[32m"
-    CYAN    = "\033[36m"
-    YELLOW  = "\033[33m"
-    MAGENTA = "\033[35m"
-    WHITE   = "\033[97m"
-
     max_desc = max(len(d) for _, d in libraries)
-    W = 13 + name_width + max_desc + 3
-    W = max(W, 50)
-
-    def row(text, visible_len):
-        return f"  {MAGENTA}║{RESET}{text}{' ' * (W - visible_len)}{MAGENTA}║{RESET}"
-
-    def sep(left="╠", right="╣"):
-        return f"  {MAGENTA}{left}{'═' * W}{right}{RESET}"
+    
+    # Create menu renderer
+    width = 13 + name_width + max_desc + 3
+    menu = MenuRenderer(width, "SpiBerry Setup")
+    c = Colors
 
     def render():
-        out = []
-        out.append("")
-        out.append(f"  {MAGENTA}╔{'═' * W}╗{RESET}")
-
-        title = "SpiBerry Setup"
-        deco = f"✦  {title}  ✦"
-        p = (W - len(deco)) // 2
-        out.append(row(
-            f"{' ' * p}{DIM}✦{RESET}  {BOLD}{WHITE}{title}{RESET}  {DIM}✦{RESET}",
-            p + len(deco)
-        ))
-
-        out.append(sep())
-        out.append(row("", 0))
-        out.append(row(f"  {BOLD}Select libraries to install:{RESET}", 30))
-        out.append(row("", 0))
+        out = menu.header()
+        out.append(menu.row("", 0))
+        out.append(menu.row(f"  {c.BOLD}Select libraries to install:{c.RESET}", 30))
+        out.append(menu.row("", 0))
 
         for i, (name, desc) in enumerate(libraries):
             n = str(i + 1)
             padded = name.ljust(name_width)
             if selected[i]:
-                mark = f"{GREEN}●{RESET}"
-                nm = f"{GREEN}{BOLD}{padded}{RESET}"
+                mark = f"{c.GREEN}●{c.RESET}"
+                nm = f"{c.GREEN}{c.BOLD}{padded}{c.RESET}"
             else:
-                mark = f"{DIM}○{RESET}"
-                nm = f"{WHITE}{padded}{RESET}"
+                mark = f"{c.DIM}○{c.RESET}"
+                nm = f"{c.WHITE}{padded}{c.RESET}"
 
             vis = f"   [{n}] X  {padded}   {desc}"
-            colored = f"   [{CYAN}{n}{RESET}] {mark}  {nm}   {DIM}{desc}{RESET}"
-            out.append(row(colored, len(vis)))
+            colored = f"   [{c.CYAN}{n}{c.RESET}] {mark}  {nm}   {c.DIM}{desc}{c.RESET}"
+            out.append(menu.row(colored, len(vis)))
 
-        out.append(row("", 0))
-        out.append(sep())
+        out.append(menu.row("", 0))
+        out.append(menu.sep())
 
         ctrl_vis = f"  1-{len(libraries)} Toggle │ a All │ c Confirm │ s Skip"
         ctrl = (
-            f"  {CYAN}1-{len(libraries)}{RESET} Toggle "
-            f"{DIM}│{RESET} {GREEN}a{RESET} All "
-            f"{DIM}│{RESET} {GREEN}c{RESET} Confirm "
-            f"{DIM}│{RESET} {YELLOW}s{RESET} Skip"
+            f"  {c.CYAN}1-{len(libraries)}{c.RESET} Toggle "
+            f"{c.DIM}│{c.RESET} {c.GREEN}a{c.RESET} All "
+            f"{c.DIM}│{c.RESET} {c.GREEN}c{c.RESET} Confirm "
+            f"{c.DIM}│{c.RESET} {c.YELLOW}s{c.RESET} Skip"
         )
-        out.append(row(ctrl, len(ctrl_vis)))
-
-        out.append(f"  {MAGENTA}╚{'═' * W}╝{RESET}")
-        out.append("")
+        out.append(menu.row(ctrl, len(ctrl_vis)))
+        out.extend(menu.footer())
 
         print("\n".join(out))
         return len(out)
@@ -219,9 +251,9 @@ def interactive_setup_menu():
     count = 0
     while True:
         if count > 0:
-            print(f"\033[{count}A\033[J", end="")
+            MenuRenderer.clear_lines(count)
         count = render()
-        print(f"  {MAGENTA}▸{RESET} ", end="", flush=True)
+        MenuRenderer.prompt()
 
         try:
             choice = _getch().lower()
@@ -236,7 +268,7 @@ def interactive_setup_menu():
             result = [libraries[i][0] for i in range(len(libraries)) if selected[i]]
             if result:
                 names = ", ".join(result)
-                print(f"\n\n  {GREEN}✓{RESET} {BOLD}Installing:{RESET} {names}\n")
+                print(f"\n\n  {c.GREEN}✓{c.RESET} {c.BOLD}Installing:{c.RESET} {names}\n")
             else:
                 print()
             return result or None
@@ -248,6 +280,131 @@ def interactive_setup_menu():
             if 0 <= idx < len(libraries):
                 selected[idx] = not selected[idx]
 
+def interactive_pin_menu():
+    """Interactive menu for configuring RGB LED and button pins."""
+    # Default pin configuration
+    defaults = {
+        "--red": 0,
+        "--green": 11,
+        "--blue": 9,
+        "--button": 17,
+    }
+    
+    pins = defaults.copy()
+    fields = [
+        ("--red", "RGB LED - Red"),
+        ("--green", "RGB LED - Green"),
+        ("--blue", "RGB LED - Blue"),
+        ("--button", "Button"),
+    ]
+    
+    selected_idx = 0
+    editing = False
+    edit_buffer = ""
+    
+    # Create menu renderer
+    name_width = max(len(desc) for _, desc in fields)
+    width = name_width + 30
+    menu = MenuRenderer(width, "Pin Configuration")
+    c = Colors
+
+    def render():
+        out = menu.header()
+        out.append(menu.row("", 0))
+        out.append(menu.row(f"  {c.BOLD}Configure GPIO pins:{c.RESET}", 22))
+        out.append(menu.row("", 0))
+
+        for i, (key, desc) in enumerate(fields):
+            n = str(i + 1)
+            padded = desc.ljust(name_width)
+            
+            if i == selected_idx:
+                mark = f"{c.CYAN}▸{c.RESET}"
+                if editing:
+                    value_str = edit_buffer + "█"
+                    color_value = f"{c.YELLOW}{c.BOLD}{value_str}{c.RESET}"
+                else:
+                    value_str = str(pins[key])
+                    color_value = f"{c.GREEN}{c.BOLD}{value_str}{c.RESET}"
+                nm = f"{c.CYAN}{c.BOLD}{padded}{c.RESET}"
+            else:
+                mark = " "
+                value_str = str(pins[key])
+                color_value = f"{c.WHITE}{value_str}{c.RESET}"
+                nm = f"{c.WHITE}{padded}{c.RESET}"
+
+            vis = f" X  [{n}] {padded}  GPIO {value_str}"
+            colored = f" {mark}  [{c.CYAN}{n}{c.RESET}] {nm}  {c.DIM}GPIO{c.RESET} {color_value}"
+            out.append(menu.row(colored, len(vis)))
+
+        out.append(menu.row("", 0))
+        out.append(menu.sep())
+
+        if editing:
+            ctrl_vis = f"  0-9 Enter Pin │ Enter Save │ Esc Cancel"
+            ctrl = (
+                f"  {c.CYAN}0-9{c.RESET} Enter Pin "
+                f"{c.DIM}│{c.RESET} {c.GREEN}Enter{c.RESET} Save "
+                f"{c.DIM}│{c.RESET} {c.YELLOW}Esc{c.RESET} Cancel"
+            )
+        else:
+            ctrl_vis = f"  1-4 Select │ d Defaults │ c Confirm │ s Skip"
+            ctrl = (
+                f"  {c.CYAN}1-4{c.RESET} Select "
+                f"{c.DIM}│{c.RESET} {c.GREEN}d{c.RESET} Defaults "
+                f"{c.DIM}│{c.RESET} {c.GREEN}c{c.RESET} Confirm "
+                f"{c.DIM}│{c.RESET} {c.YELLOW}s{c.RESET} Skip"
+            )
+        out.append(menu.row(ctrl, len(ctrl_vis)))
+        out.extend(menu.footer())
+
+        print("\n".join(out))
+        return len(out)
+
+    count = 0
+    while True:
+        if count > 0:
+            MenuRenderer.clear_lines(count)
+        count = render()
+        MenuRenderer.prompt()
+
+        try:
+            choice = _getch()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+
+        if editing:
+            if choice == "\r" or choice == "\n":  # Enter
+                if edit_buffer.isdigit() and 0 <= int(edit_buffer) <= 27:
+                    pins[fields[selected_idx][0]] = int(edit_buffer)
+                    editing = False
+                    edit_buffer = ""
+                elif edit_buffer == "":
+                    editing = False
+            elif choice == "\x1b":  # Escape
+                editing = False
+                edit_buffer = ""
+            elif choice.isdigit():
+                edit_buffer += choice
+            elif choice == "\x7f" or choice == "\x08":  # Backspace
+                edit_buffer = edit_buffer[:-1]
+        else:
+            choice_lower = choice.lower()
+            if choice_lower == "s":
+                print()
+                return None
+            elif choice_lower == "c":
+                print(f"\n\n  {c.GREEN}✓{c.RESET} {c.BOLD}Pin configuration confirmed{c.RESET}\n")
+                return pins
+            elif choice_lower == "d":
+                pins = defaults.copy()
+            elif choice.isdigit():
+                idx = int(choice) - 1
+                if 0 <= idx < len(fields):
+                    selected_idx = idx
+                    editing = True
+                    edit_buffer = str(pins[fields[idx][0]])
 
 def reexec_in_venv(python, extract_dir, app_args):
     env = os.environ.copy()
@@ -274,6 +431,7 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
+    interactive_pin_menu()
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
@@ -281,21 +439,27 @@ def main():
             print("This application must be run as root. Please use sudo.")
             sys.exit(1)
 
-    zip_path = Path(os.getcwd()) / Path(__file__).resolve().parent.name
-    work_dir = zip_path.parent
+    zip_path = Path(__file__).resolve().parent
+    work_dir = Path(os.getcwd())
+    
+    if zip_path.parent.parent != Path(os.getcwd()):
+        print("Warning: The application is being run from a different directory than where it's located.")
+        install_location = input("Install to 1) current directory 2) file directory: ")
+        if install_location == "1":
+            pass
+        elif install_location == "2":
+            work_dir = zip_path.parent
+
     extract_dir = work_dir / EXTRACT_DIR
     venv_path = work_dir / VENV_DIR
     
-    print(f"Zip path: {zip_path}")
-    print(f"Working directory: {work_dir}")
-    print(f"Extract directory: {extract_dir}")
-    print(f"Virtualenv path: {venv_path}")
 
     if running_in_correct_venv():
         from app.main import main as app_main
         app_main()
         return
     else:
+        print("Not running in (correct) virtual environment. Setting up...")
         create_venv(venv_path)
         first_setup = True
 
@@ -311,14 +475,18 @@ def main():
         python = venv_python(venv_path)
 
     if first_setup:
-        extra_libs = interactive_setup_menu()
+        extra_libs = interactive_installation_menu()
         if extra_libs:
             install_extra(python, extra_libs)
 
+    if len(sys.argv) > 1 and sys.argv[1] == "--set-pins":
+        pin_args = interactive_pin_menu()
+        pin_args = [sys.argv[0]] + [f"{k} {v}" for k, v in pin_args.items()] + sys.argv[1:]
+    
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(sys.argv[1:]))
+        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(pin_args if 'pin_args' in locals() else sys.argv[1:]))
         service = service.replace("<workingdirectory>", str(extract_dir))
         destination = Path("/etc/systemd/system/sbe.service")
         destination.write_text(service)
@@ -326,7 +494,7 @@ def main():
         subprocess.check_call(["systemctl", "enable", "sbe.service"])
         subprocess.check_call(["systemctl", "start", "sbe.service"])
     else:
-        reexec_in_venv(python, extract_dir, sys.argv[1:])
+        reexec_in_venv(python, extract_dir, pin_args if 'pin_args' in locals() else sys.argv[1:])
 
 
 if __name__ == "__main__":
