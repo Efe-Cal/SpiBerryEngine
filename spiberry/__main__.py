@@ -5,7 +5,7 @@ import venv
 import shutil
 import zipfile
 from pathlib import Path
-
+import importlib.metadata as metadata
 
 def _getch():
     """Read a single keypress without waiting for Enter (cross-platform)."""
@@ -31,9 +31,16 @@ VENV_DIR = "venv"
 EXTRACT_DIR = "spiberry_app"
 
 
-def running_in_venv():
-    return sys.prefix != sys.base_prefix
+def running_in_correct_venv():
+    if sys.prefix == sys.base_prefix or Path(sys.prefix) != Path(__file__).resolve().parent.parent / VENV_DIR:
+        return False
 
+    libs = set([d.metadata["Name"].lower() for d in metadata.distributions()])
+    for lib in ("gpiozero","mpremote","pyserial","watchdog","rpi-gpio"):
+        if lib not in libs:
+            return False
+    
+    return True
 
 def extract_if_needed(zip_path, target):
     if target.exists():
@@ -267,7 +274,6 @@ def reexec_in_venv(python, extract_dir, app_args):
 
 
 def main():
-    interactive_setup_menu()
     # is running root?
     if os.name != "nt":
         geteuid = getattr(os, "geteuid", None)
@@ -275,22 +281,30 @@ def main():
             print("This application must be run as root. Please use sudo.")
             sys.exit(1)
 
-    zip_path = Path(__file__).resolve().parent
+    zip_path = Path(os.getcwd()) / Path(__file__).resolve().parent.name
     work_dir = zip_path.parent
     extract_dir = work_dir / EXTRACT_DIR
     venv_path = work_dir / VENV_DIR
+    
+    print(f"Zip path: {zip_path}")
+    print(f"Working directory: {work_dir}")
+    print(f"Extract directory: {extract_dir}")
+    print(f"Virtualenv path: {venv_path}")
 
-    if running_in_venv():
+    if running_in_correct_venv():
         from app.main import main as app_main
         app_main()
         return
+    else:
+        create_venv(venv_path)
+        first_setup = True
 
     extract_if_needed(zip_path, extract_dir)
 
-    first_setup = not venv_path.exists()
+    # first_setup = not venv_path.exists()
 
     if first_setup:
-        create_venv(venv_path)
+        # create_venv(venv_path)
         python = venv_python(venv_path)
         pip_install(python, extract_dir)
     else:

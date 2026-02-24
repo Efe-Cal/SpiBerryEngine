@@ -1,6 +1,7 @@
 import json
 import os
 from typing import Literal, TypedDict
+import logging
 
 import numpy as np
 import cv2
@@ -12,6 +13,8 @@ from .camera import Camera
 
 if importlib.util.find_spec("ultralytics") is not None:
     from ultralytics import YOLO
+
+logger = logging.getLogger("SpiBerryEngine")
 
 class Vision:
     def __init__(self, model_path="yolo26n.pt", camera:Camera=None):
@@ -154,7 +157,7 @@ class ContourDetector:
         script_dir = os.path.dirname(__file__)
         config_path = os.path.join(script_dir, 'config.json')
         if not os.path.exists(config_path):
-            print(f"Configuration file not found at {config_path}. Using the hardcoded default configuration.")
+            logger.warning(f"[Vision] Configuration file not found at {config_path}. Using the hardcoded default configuration.")
             return self.FALLBACK_CONFIG
         
         with open(config_path, 'r') as f:
@@ -239,11 +242,11 @@ class ContourDetector:
                 detections.append((color, cv2.contourArea(cnt), cx, cy))
             
         if len(detections) == 0 and self.retry_with_extended==False:
-            print("No boxes detected")
+            logger.info("[Vision] No boxes detected")
             self.retry_with_extended = True
             return self.detect_contours(img, self.extend_color_range(self.config["color_ranges"]))
         if len(detections) == 0 and self.retry_with_extended==True:
-            print("No boxes detected even after extending ranges")
+            logger.info("[Vision] No boxes detected even after extending ranges")
             self.retry_with_extended = False
             return None
         
