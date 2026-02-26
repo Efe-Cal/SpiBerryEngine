@@ -9,7 +9,9 @@ from scipy.spatial import cKDTree
 
 import importlib.util
 
-from .camera import Camera
+# from .camera import Camera
+class Camera:
+    pass
 
 if importlib.util.find_spec("ultralytics") is not None:
     from ultralytics import YOLO
@@ -72,11 +74,15 @@ class ContourDetector:
     MORPHOLOGY_KERNEL_SIZE = (7, 7)  # Kernel size for morphological operations
     DIST_TRESH = 0.4  # Distance threshold for distance transform
     EXTENSION_OFFSET = (10, 30, 30)  # Offset for extending color ranges
-    FALLBACK_CONFIG = None # {"big_box_crop": [1735, 657, 172, 122], "color_ranges": {"red": [[[0, 143, 54], [12, 253, 164]], [[162, 143, 54], [179, 253, 164]]], "green": [[[60, 137, 13], [90, 247, 123]]], "blue": [[[94, 173, 45], [124, 255, 155]]], "yellow": [[[7, 170, 99], [37, 255, 209]]]}}
+    FALLBACK_CONFIG = {"big_box_crop": [1735, 657, 172, 122], "color_ranges": {"red": [[[0, 143, 54], [12, 253, 164]], [[162, 143, 54], [179, 253, 164]]], "green": [[[39, 173, 95], [59, 255, 205]]], "blue": [[[94, 173, 45], [124, 255, 155]]], "yellow": [[[7, 170, 99], [37, 255, 209]]]}}
     
     def __init__(self, camera:Camera=None):
         self.camera = camera if camera else Camera()
         self.config = self.load_config()
+        if self.config is None:
+            logger.warning("[Vision] Using hardcoded fallback configuration for contour detection.")
+            self.config = self.FALLBACK_CONFIG
+        self.retry_with_extended = False
     
     def closeness_to_center(self, img, detection):
         _,_,cx,cy = detection
@@ -178,19 +184,22 @@ class ContourDetector:
         mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         return mask
 
-    def extend_color_range(self, color_range: list, offset:tuple=(5,10,10)) -> list:
-        """Extends a color range by an offset."""
-        if isinstance(color_range[0][0],list):
-            lo = self.extend_color_range(color_range[0], offset)[0]
-            hi = self.extend_color_range(color_range[1], offset)[0]
+    def extend_color_range(self, color_range: list, offset:tuple=None) -> list:
+        """Extends a single color's HSV ranges by an offset."""
+        if offset is None:
+            offset = self.EXTENSION_OFFSET
+        if isinstance(color_range[0][0], list):
+            # Multiple sub-ranges (e.g. red wraps around hue) — extend each independently
+            return [r for sub_range in color_range for r in self.extend_color_range(sub_range, offset)]
         else:
             lo, hi = color_range
-            lo = list(max(0, c - o) for c, o in zip(lo, offset))
-            hi = list(min(255, c + o) for c, o in zip(hi, offset))
-            
-        return [[lo, hi]]
+            lo = [max(0, c - o) for c, o in zip(lo, offset)]
+            hi = [min(255, c + o) for c, o in zip(hi, offset)]
+            return [[lo, hi]]
 
-    retry_with_extended = False
+    def extend_all_color_ranges(self, color_ranges: dict, offset: tuple = None) -> dict:
+        """Extends every color's ranges in a color_ranges dict."""
+        return {color: self.extend_color_range(ranges, offset) for color, ranges in color_ranges.items()}
     
     class Filters(TypedDict):
         min_area: int
@@ -199,15 +208,20 @@ class ContourDetector:
         n: int
         vertices: int
     
-    def detect_contours(self, img, filters:Filters=None):
+    def detect_contours(self, img, filters:Filters=None, _color_ranges:dict=None):
         """
         Detects contours in the image
         """
         # Convert to HSV color space
         hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
         
+        color_ranges = _color_ranges if _color_ranges is not None else self.config["color_ranges"]
+        
         detections = []
-        for color, ranges in self.config["color_ranges"].items():
+        for color, ranges in color_ranges.items():
+            # Skip colors that don't match the filter
+            if filters and filters.get("color") and filters["color"] != color:
+                continue
             # Create mask for the color
             mask = self.build_clean_mask(hsv, ranges, kernel_size=self.MORPHOLOGY_KERNEL_SIZE)
 
@@ -219,10 +233,10 @@ class ContourDetector:
             
             # Find contours
             contours, _ = cv2.findContours(dist_transform.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
+
             # Merge contours that are close to each other and calculate total area
             contours = self.merge_close_contours(contours, d_thresh=20)
-                        
+            
             if filters and filters["min_area"] is not None and filters["max_area"] is not None:
                 contours = [c for c in contours if filters['min_area'] < cv2.contourArea(c) < filters['max_area']]
             
@@ -241,15 +255,17 @@ class ContourDetector:
             
                 detections.append((color, cv2.contourArea(cnt), cx, cy))
             
-        if len(detections) == 0 and self.retry_with_extended==False:
+        if len(detections) == 0 and not self.retry_with_extended:
             logger.info("[Vision] No boxes detected")
             self.retry_with_extended = True
-            return self.detect_contours(img, self.extend_color_range(self.config["color_ranges"]))
-        if len(detections) == 0 and self.retry_with_extended==True:
+            extended = self.extend_all_color_ranges(self.config["color_ranges"])
+            return self.detect_contours(img, filters, _color_ranges=extended)
+        if len(detections) == 0 and self.retry_with_extended:
             logger.info("[Vision] No boxes detected even after extending ranges")
             self.retry_with_extended = False
             return None
         
+        self.retry_with_extended = False
         return detections
     
     @staticmethod
@@ -261,22 +277,25 @@ if __name__ == "__main__":
     import cv2
 
     # Load an image from file
-    image = cv2.imread(r"C:\Users\efeca\Desktop\dogs.jpg")
+    image = cv2.imread(r"C:\Users\efeca\Desktop\Adsiz.png")
 
-    # Detect objects in the image
-    detected_objects = Vision().detect_objects_from_image(image, "yolo26n")
+    cont = ContourDetector()
+    contours = cont.detect_contours(image, filters=ContourDetector.Filters(min_area=1, max_area=1000000000000000000, color="green", n=5, vertices=None))
+    print(contours)
+    # # Detect objects in the image
+    # detected_objects = Vision().detect_objects_from_image(image, "yolo26n")
 
-    # Show detected objects on the image
-    for obj in detected_objects:
-        x1, y1, x2, y2 = map(int, obj["xyxy"])  # Bounding box coordinates
-        confidence = obj["confidence"] if obj["confidence"] is not None else 0.0
-        class_id = obj["class_id"] if obj["class_id"] is not None else -1
+    # # Show detected objects on the image
+    # for obj in detected_objects:
+    #     x1, y1, x2, y2 = map(int, obj["xyxy"])  # Bounding box coordinates
+    #     confidence = obj["confidence"] if obj["confidence"] is not None else 0.0
+    #     class_id = obj["class_id"] if obj["class_id"] is not None else -1
 
-        # Draw bounding box and label on the image
-        cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        label = f"Class: {class_id}, Conf: {confidence:.2f}"
-        cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    #     # Draw bounding box and label on the image
+    #     cv2.rectangle(image, (x1, y1), (x2, y2), (0, 255, 0), 2)
+    #     label = f"Class: {class_id}, Conf: {confidence:.2f}"
+    #     cv2.putText(image, label, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
     
-    # Display the image with detected objects
+    # # Display the image with detected objects
     cv2.imshow("Detected Objects", image)
     cv2.waitKey(0)
