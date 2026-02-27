@@ -9,9 +9,7 @@ from scipy.spatial import cKDTree
 
 import importlib.util
 
-# from .camera import Camera
-class Camera:
-    pass
+from .camera import Camera
 
 if importlib.util.find_spec("ultralytics") is not None:
     from ultralytics import YOLO
@@ -72,16 +70,13 @@ class Vision:
 
 class ContourDetector:
     MORPHOLOGY_KERNEL_SIZE = (7, 7)  # Kernel size for morphological operations
-    DIST_TRESH = 0.4  # Distance threshold for distance transform
+    DIST_THRESH = 0.4  # Distance threshold for distance transform
     EXTENSION_OFFSET = (10, 30, 30)  # Offset for extending color ranges
     FALLBACK_CONFIG = {"big_box_crop": [1735, 657, 172, 122], "color_ranges": {"red": [[[0, 143, 54], [12, 253, 164]], [[162, 143, 54], [179, 253, 164]]], "green": [[[39, 173, 95], [59, 255, 205]]], "blue": [[[94, 173, 45], [124, 255, 155]]], "yellow": [[[7, 170, 99], [37, 255, 209]]]}}
     
     def __init__(self, camera:Camera=None):
         self.camera = camera if camera else Camera()
         self.config = self.load_config()
-        if self.config is None:
-            logger.warning("[Vision] Using hardcoded fallback configuration for contour detection.")
-            self.config = self.FALLBACK_CONFIG
         self.retry_with_extended = False
     
     def closeness_to_center(self, img, detection):
@@ -172,7 +167,7 @@ class ContourDetector:
         return config
 
     def build_clean_mask(self, hsv: np.ndarray,
-                        ranges: list[tuple[list[int],tuple[int]]],
+                        ranges: list[list[list[int]]],
                         kernel_size: tuple[int,int]=MORPHOLOGY_KERNEL_SIZE) -> np.ndarray:
         """Build and clean mask for a list of HSV ranges."""
         mask = None
@@ -245,7 +240,7 @@ class ContourDetector:
             
             # Get the largest n contours
             sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
-            n = filters["n"] if filters else 1
+            n = filters["n"] if filters and filters["n"] else 1
             contours = sorted_contours[:n]
             
             for cnt in contours:
@@ -258,14 +253,15 @@ class ContourDetector:
         if len(detections) == 0 and not self.retry_with_extended:
             logger.info("[Vision] No boxes detected")
             self.retry_with_extended = True
-            extended = self.extend_all_color_ranges(self.config["color_ranges"])
-            return self.detect_contours(img, filters, _color_ranges=extended)
+            try:
+                extended = self.extend_all_color_ranges(self.config["color_ranges"])
+                return self.detect_contours(img, filters, _color_ranges=extended)
+            finally:
+                self.retry_with_extended = False
         if len(detections) == 0 and self.retry_with_extended:
             logger.info("[Vision] No boxes detected even after extending ranges")
-            self.retry_with_extended = False
             return None
         
-        self.retry_with_extended = False
         return detections
     
     @staticmethod
