@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Literal, TypedDict
+from typing import Literal, TypedDict, Union
 import logging
 
 import numpy as np
@@ -188,8 +188,9 @@ class ContourDetector:
             return [r for sub_range in color_range for r in self.extend_color_range(sub_range, offset)]
         else:
             lo, hi = color_range
+            hsv_max = (179, 255, 255)
             lo = [max(0, c - o) for c, o in zip(lo, offset)]
-            hi = [min(255, c + o) for c, o in zip(hi, offset)]
+            hi = [min(m, c + o) for c, o, m in zip(hi, offset, hsv_max)]
             return [[lo, hi]]
 
     def extend_all_color_ranges(self, color_ranges: dict, offset: tuple = None) -> dict:
@@ -199,7 +200,7 @@ class ContourDetector:
     class Filters(TypedDict):
         min_area: int
         max_area: int
-        color: Literal["red", "green", "blue", "yellow"]
+        color: Union[str, list[str], None]
         n: int
         vertices: int
     
@@ -232,15 +233,17 @@ class ContourDetector:
             # Merge contours that are close to each other and calculate total area
             contours = self.merge_close_contours(contours, d_thresh=20)
             
-            if filters and filters["min_area"] is not None and filters["max_area"] is not None:
-                contours = [c for c in contours if filters['min_area'] < cv2.contourArea(c) < filters['max_area']]
+            min_area = filters.get("min_area") if filters else None
+            max_area = filters.get("max_area") if filters else None
+            if min_area is not None and max_area is not None:
+                contours = [c for c in contours if min_area < cv2.contourArea(c) < max_area]
             
             if not contours:
                 continue
             
             # Get the largest n contours
             sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
-            n = filters["n"] if filters and filters["n"] else 1
+            n = filters.get("n") or 1 if filters else 1
             contours = sorted_contours[:n]
             
             for cnt in contours:

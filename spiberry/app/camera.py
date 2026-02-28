@@ -125,6 +125,9 @@ class Camera:
             if not was_started:
                 self.stop()
         
+        else:
+            raise ValueError(f"Unsupported take_picture_method: {self.take_picture_method}")
+        
         return image
     
     def __enter__(self):
