@@ -59,8 +59,14 @@ class RemoteDriveController(Controller):
                     self.state.transport.serial.write(b"turn;"+turn_motor.encode("utf-8")+b";"+str(motor_direction).encode("utf-8")+b"\n")
                     while abs(joystick.lx) > 0.5:
                         sleep(0.01)
-                    self.state.transport.serial.write(b"stop_turn"+turn_motor.encode("utf-8")+b"\n")
-
+                    self.state.transport.serial.write(b"stop_turn;"+turn_motor.encode("utf-8")+b"\n")
+                
+                elif joystick.presses.dright or joystick.presses.dleft:
+                    turn_direction = -1 if joystick.presses.dright else 1
+                    self.state.transport.serial.write(b"two_wheel_turn;"+str(turn_direction).encode("utf-8")+b"\n")
+                    while not (joystick.releases.dright or joystick.releases.dleft):
+                        sleep(0.01)
+                    self.state.transport.serial.write(b"stop_two_wheel_turn\n")
         
 if __name__ == "__main__":
     controller = RemoteDriveController()
