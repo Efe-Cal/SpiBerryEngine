@@ -1,0 +1,9 @@
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, Union
+
+class color_sensor:
+    @staticmethod
+    def color(port: int) -> int: ...
+    @staticmethod
+    def reflection(port: int) -> int: ...
+    @staticmethod
+    def rgbi(port: int) -> Tuple[int, int, int, int]: ...
