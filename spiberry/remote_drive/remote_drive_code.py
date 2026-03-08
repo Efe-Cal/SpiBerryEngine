@@ -1,6 +1,3 @@
-from tkinter import W
-from typing import final
-
 import motor # type: ignore
 import motor_pair # type: ignore
 import runloop # type: ignore
@@ -62,7 +59,10 @@ class Raspi:
 def getGyro():
     return -1*motion_sensor.tilt_angles()[0]
 
-def moveWithGyro(velocity:int, angle:int):
+angle = getGyro()
+
+def moveWithGyro(velocity:int):
+    global angle
     utime.sleep_ms(30)
     motor_pair.stop(motor_pair.PAIR_1)
     start_time = utime.ticks_ms()
@@ -98,13 +98,13 @@ def twoWheelTurn(turn_direction, speed = 1):
     utime.sleep_ms(100)
     return final_gyro - init_gyro
 
-def gyroTurn(motor_turn_direction, turningMotor, speed=1):
+def gyroTurn(motor_turn_direction, turning_motor, speed=1):
 
     utime.sleep_ms(30)
     
     init_gyro = getGyro()
     
-    motor.run(turningMotor, motor_turn_direction*100*speed)
+    motor.run(turning_motor, motor_turn_direction*100*speed)
 
     while True:    
         ready, _, _ = select.select([sys.stdin], [], [], 0.0)
@@ -118,3 +118,49 @@ def gyroTurn(motor_turn_direction, turningMotor, speed=1):
     utime.sleep_ms(100)
     
     return final_gyro - init_gyro
+
+sequence = []
+
+def main_loop():
+    global angle
+    turn_init_gyro = None
+    while True:
+        command = input().split(";")[0]
+        
+        if command[0] == "move":
+            adj = int(angle-getGyro())
+            motor_pair.move_tank(motor_pair.PAIR_1, command[1] + adj, command[1] - adj)
+        
+        elif command[0] == "stop":
+            # TODO log action
+            motor_pair.stop(motor_pair.PAIR_1)
+        
+        
+        elif command[0] == "turn":
+            turn_init_gyro = getGyro()
+            utime.sleep_ms(30)
+            motor.run(command[1], command[2]*100)
+            
+        elif command[0] == "stop_turn":
+            motor.stop(command[1], stop=motor.HOLD)
+            utime.sleep_ms(30)
+            turn_final_gyro = getGyro()
+            # TODO log action (turn_final_gyro - turn_init_gyro)
+            turn_init_gyro = None
+        
+        elif command[0] == "two_wheel_turn":
+            turn_init_gyro = getGyro()
+            utime.sleep_ms(30)
+            motor_pair.move_tank(motor_pair.PAIR_1, -100*command[1], 100*command[1])
+        elif command[0] == "stop_two_wheel_turn":
+            motor_pair.stop(motor_pair.PAIR_1, stop=motor.HOLD)
+            utime.sleep_ms(30)
+            turn_final_gyro = getGyro()
+            # TODO log action (turn_final_gyro - turn_init_gyro)
+            turn_init_gyro = None
+        
+        elif command[0] == "exit":
+            break
+
+if __name__ == "__main__":
+    main_loop()
