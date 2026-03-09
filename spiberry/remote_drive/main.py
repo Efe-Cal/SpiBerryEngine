@@ -17,6 +17,17 @@ class RemoteDriveController(Controller):
         worker_thread = threading.Thread(target=self.worker)
         worker_thread.start()
 
+    def retrive_actions_log(self):
+        self.state.transport.serial.write(b"exit\n")
+        log_data = b""
+        while True:
+            chunk = self.state.transport.serial.readline()
+            if chunk.startswith(b";;") and chunk.endswith(b";;"):
+                log_data += chunk[2:-2]
+                break
+            log_data += chunk
+        self.actions = log_data.decode("utf-8")
+    
     def start_with_socket(self):
         self.sock = socket(AF_INET, SOCK_STREAM)
         self.sock.bind(("0.0.0.0", 8080))
@@ -40,7 +51,6 @@ class RemoteDriveController(Controller):
     def start_with_controller(self):
         from approxeng.input.selectbinder import ControllerResource
         self.run_code()
-        
         
         with ControllerResource(deadzone=0.15) as joystick:
             while joystick.connected:
@@ -67,7 +77,11 @@ class RemoteDriveController(Controller):
                     while not (joystick.releases.dright or joystick.releases.dleft):
                         sleep(0.01)
                     self.state.transport.serial.write(b"stop_two_wheel_turn\n")
-        
+                
+                elif joystick.presses.ls and joystick.presses.rs:
+                    self.retrive_actions_log()
+
+                
 if __name__ == "__main__":
     controller = RemoteDriveController()
     controller.start_with_controller()

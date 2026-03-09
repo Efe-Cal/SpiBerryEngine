@@ -119,8 +119,6 @@ def gyroTurn(motor_turn_direction, turning_motor, speed=1):
     
     return final_gyro - init_gyro
 
-sequence = []
-
 motors = {
     "left": SOL_TEKER,
     "right": SAG_TEKER
@@ -128,16 +126,17 @@ motors = {
 
 def main_loop():
     global angle
-    turn_init_gyro = None
+    actions_log = []
     while True:
         command = input().split(";")[0]
         
         if command[0] == "move":
+            move_init_time = utime.ticks_ms()
             adj = int(angle-getGyro())
             motor_pair.move_tank(motor_pair.PAIR_1, int(command[1]) + adj, int(command[1]) - adj)
         
         elif command[0] == "stop":
-            # TODO log action
+            actions_log.append(("move", utime.ticks_diff(utime.ticks_ms(), move_init_time)))
             motor_pair.stop(motor_pair.PAIR_1)
         
         
@@ -152,7 +151,8 @@ def main_loop():
             motor.stop(motor_to_turn, stop=motor.HOLD)
             utime.sleep_ms(30)
             turn_final_gyro = getGyro()
-            # TODO log action (turn_final_gyro - turn_init_gyro)
+
+            actions_log.append(("turn", turn_final_gyro - turn_init_gyro))
             turn_init_gyro = None
 
 
@@ -160,15 +160,18 @@ def main_loop():
             turn_init_gyro = getGyro()
             utime.sleep_ms(30)
             motor_pair.move_tank(motor_pair.PAIR_1, -100*command[1], 100*command[1])
+
         elif command[0] == "stop_two_wheel_turn":
             motor_pair.stop(motor_pair.PAIR_1, stop=motor.HOLD)
             utime.sleep_ms(30)
             turn_final_gyro = getGyro()
-            # TODO log action (turn_final_gyro - turn_init_gyro)
+            
+            actions_log.append(("two_wheel_turn", turn_final_gyro - turn_init_gyro))
             turn_init_gyro = None
         
         elif command[0] == "exit":
             break
+    print(";;" + str(actions_log) + ";;")
 
 if __name__ == "__main__":
     main_loop()
