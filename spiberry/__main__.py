@@ -202,6 +202,7 @@ def interactive_installation_menu():
         ("opencv-python",       "Computer vision"),
         ("ultralytics[export]", "YOLO / AI models"),
         ("python3-scipy",       "Scientific computing"),
+        ("approxeng.input",     "Game controller support"),
     ]
     selected = [False] * len(libraries)
     name_width = max(len(name) for name, _ in libraries)
