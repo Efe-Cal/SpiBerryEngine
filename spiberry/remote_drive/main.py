@@ -1,5 +1,4 @@
 import os
-import threading
 from time import sleep
 from ..app.main import Controller
 from socket import socket, AF_INET, SOCK_STREAM
@@ -12,12 +11,7 @@ class RemoteDriveController(Controller):
         with open(os.path.join(__file__, "remote_drive_code.py"), "r") as f:
             self.code = f.read()
 
-    def run_code(self):
-        self.work_event.set()
-        worker_thread = threading.Thread(target=self.worker)
-        worker_thread.start()
-
-    def retrive_actions_log(self):
+    def retrieve_actions_log(self):
         self.state.transport.serial.write(b"exit\n")
         log_data = b""
         while True:
@@ -36,17 +30,60 @@ class RemoteDriveController(Controller):
         conn, addr = self.sock.accept()
         print(f"Connected by {addr}")
         
+        self.run_code()
+
+        buffer = ""
         while True:
-            data = conn.recv(1024)
-            data = data.decode("utf-8")
-            if data == "init":
-                self.run_code()
-            elif data == "stop":
-                self.work_event.clear()
-                self.stop()
+            chunk = conn.recv(1024).decode("utf-8")
+            if not chunk:
                 break
-            else:
-                self.state.transport.serial.write(data.encode("utf-8"))
+
+            buffer += chunk
+            while "\n" in buffer:
+                line, buffer = buffer.split("\n", 1)
+                line = line.strip()
+                if not line:
+                    continue
+
+                parts = line.split(";")
+                command = parts[0]
+
+                if command == "move":
+                    speed = parts[1] if len(parts) > 1 else "0"
+                    self.state.transport.serial.write(b"move;" + speed.encode("utf-8") + b"\n")
+
+                elif command == "stop_move":
+                    self.state.transport.serial.write(b"stop\n")
+
+                elif command == "turn":
+                    turn_motor = parts[1]
+                    motor_direction = parts[2] if len(parts) > 2 else "1"
+                    self.state.transport.serial.write(b"turn;" + turn_motor.encode("utf-8") + b";" + motor_direction.encode("utf-8") + b"\n")
+
+                elif command == "stop_turn":
+                    turn_motor = parts[1]
+                    self.state.transport.serial.write(b"stop_turn;" + turn_motor.encode("utf-8") + b"\n")
+
+                elif command == "two_wheel_turn":
+                    turn_direction = parts[1]
+                    self.state.transport.serial.write(b"two_wheel_turn;" + turn_direction.encode("utf-8") + b"\n")
+
+                elif command == "stop_two_wheel_turn":
+                    self.state.transport.serial.write(b"stop_two_wheel_turn\n")
+
+                elif command == "retrieve_log":
+                    self.retrieve_actions_log()
+                    conn.sendall(self.actions.encode("utf-8"))
+
+                elif command == "exit":
+                    self.work_event.clear()
+                    self.stop()
+                    conn.close()
+                    self.sock.close()
+                    return
+
+        conn.close()
+        self.sock.close()
 
     def start_with_controller(self):
         from approxeng.input.selectbinder import ControllerResource
@@ -79,7 +116,7 @@ class RemoteDriveController(Controller):
                     self.state.transport.serial.write(b"stop_two_wheel_turn\n")
                 
                 elif joystick.presses.ls and joystick.presses.rs:
-                    self.retrive_actions_log()
+                    self.retrieve_actions_log()
 
                 
 if __name__ == "__main__":

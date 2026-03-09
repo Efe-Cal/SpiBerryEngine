@@ -215,7 +215,7 @@ class Controller:
                     result_string = ""
         return result_string
 
-    def worker(self):
+    def run_code(self):
         try:
             logger.info("Entering raw REPL.")
             self.state.transport.enter_raw_repl()
@@ -236,6 +236,10 @@ class Controller:
         # Blink green 2 times (background)
         rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
         logger.info("Code execution started. Awaiting function calls.")
+        
+
+    def worker(self):
+        self.run_code()
         
         while self.work_event.is_set():
             sleep(0.05)
