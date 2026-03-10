@@ -482,6 +482,12 @@ def main():
         pin_args = interactive_pin_menu()
         pin_args = [sys.argv[0]] + [f"{k} {v}" for k, v in pin_args.items()] + sys.argv[1:]
     
+    # Make scripts executable
+    scripts_dir = extract_dir / "scripts"
+    if os.name != "nt" and scripts_dir.exists():
+        for script in scripts_dir.glob("*.sh"):
+            script.chmod(0o755)
+
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
