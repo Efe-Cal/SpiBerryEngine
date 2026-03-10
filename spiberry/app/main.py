@@ -95,16 +95,19 @@ class HotReloadHandler(FileSystemEventHandler):
 class Controller:
     def __init__(self):
         self.devices = {}
-
-        with open(ROBOT_CODE, "r") as f:
-            self.code = f.read()
-            logger.info("Loaded robot_code.py.")
+        self.code = ""
         
         self.observer = Observer()
         self.event_handler = HotReloadHandler(self)
         self.observer.schedule(self.event_handler, ".", recursive=False)
         self.observer.start()
-        
+
+        self.init_mp_device()
+
+        self.work_event = threading.Event()
+        self.worker_thread = None
+    
+    def init_mp_device(self):
         self.state = State()
 
         try:
@@ -115,10 +118,7 @@ class Controller:
             rgbLED.blink(on_time=0.3, off_time=0.3, n=5, on_color=(1,0,0), off_color=(0,0,0), background=False)
             logger.critical(f"Error connecting to the device: {e}")
             sys.exit(1)
-            
-        self.work_event = threading.Event()
-        self.worker_thread = None
-    
+
     def stop(self, state:State):
         logger.info("Stopping and resetting device connection.")
         commands.do_disconnect(state)
@@ -216,6 +216,9 @@ class Controller:
         return result_string
 
     def run_code(self):
+        with open(ROBOT_CODE, "r") as f:
+            self.code = f.read()
+            logger.info("Loaded robot_code.py.")
         try:
             logger.info("Entering raw REPL.")
             self.state.transport.enter_raw_repl()

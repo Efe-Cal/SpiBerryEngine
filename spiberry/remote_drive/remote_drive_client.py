@@ -3,7 +3,7 @@ from socket import socket, AF_INET, SOCK_STREAM
 
 
 class RemoteDriveClient:
-    def __init__(self, host="127.0.0.1", port=8080):
+    def __init__(self, host="192.168.137.2", port=8080):
         self.host = host
         self.port = port
         self.sock = None
@@ -128,7 +128,7 @@ class RemoteDriveClient:
 
     def _move(self):
         speed = self.speed_entry.get()
-        self._send(f"move;{speed//1000}")
+        self._send(f"move;{speed}")
 
     def _stop_move(self):
         self._send("stop_move")

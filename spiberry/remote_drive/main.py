@@ -1,26 +1,55 @@
 import os
 from time import sleep
-from ..app.main import Controller
+from spiberry.app.main import Controller
 from socket import socket, AF_INET, SOCK_STREAM
+
+
+DEVICE_TRACE_PREFIX = "TRACE:"
 
 
 class RemoteDriveController(Controller):
     def __init__(self):
-        super().__init__()
+        self.init_mp_device()
         
-        with open(os.path.join(__file__, "remote_drive_code.py"), "r") as f:
+        with open(os.path.join(os.path.dirname(__file__), "remote_drive_code.py"), "r") as f:
             self.code = f.read()
 
+    def _trace(self, message):
+        print(f"[host] {message}")
+
+    def _trace_serial_in(self, payload):
+        if not payload:
+            return
+        for line in payload.decode("utf-8", errors="replace").splitlines():
+            if not line:
+                continue
+            print(f"[serial<-device] {line}")
+
+    def _drain_serial(self):
+        self._trace_serial_in(self.state.transport.serial.read_all())
+
+    def _write_serial_line(self, line):
+        self._trace(f"serial->device {line}")
+        self.state.transport.serial.write(f"{line}\n".encode("utf-8"))
+
     def retrieve_actions_log(self):
-        self.state.transport.serial.write(b"exit\n")
-        log_data = b""
+        self._trace("requesting action log")
+        self._write_serial_line("exit")
+        log_lines = []
         while True:
-            chunk = self.state.transport.serial.readline()
-            if chunk.startswith(b";;") and chunk.endswith(b";;"):
-                log_data += chunk[2:-2]
+            chunk = self.state.transport.serial.readline().decode("utf-8", errors="replace").strip()
+            if not chunk:
+                continue
+            if chunk.startswith(DEVICE_TRACE_PREFIX):
+                print(f"[serial<-device] {chunk}")
+                continue
+            if chunk.startswith(";;") and chunk.endswith(";;"):
+                log_lines.append(chunk[2:-2])
                 break
-            log_data += chunk
-        self.actions = log_data.decode("utf-8")
+            print(f"[serial<-device] {chunk}")
+            log_lines.append(chunk)
+        self.actions = "\n".join(log_lines)
+        self._trace(f"received action log {self.actions}")
     
     def start_with_socket(self):
         self.sock = socket(AF_INET, SOCK_STREAM)
@@ -34,9 +63,13 @@ class RemoteDriveController(Controller):
 
         buffer = ""
         while True:
+            self._drain_serial()
+            
             chunk = conn.recv(1024).decode("utf-8")
             if not chunk:
                 break
+
+            self._trace(f"socket->host {chunk!r}")
 
             buffer += chunk
             while "\n" in buffer:
@@ -45,39 +78,41 @@ class RemoteDriveController(Controller):
                 if not line:
                     continue
 
+                self._trace(f"host parsed command {line}")
+
                 parts = line.split(";")
                 command = parts[0]
 
                 if command == "move":
                     speed = parts[1] if len(parts) > 1 else "0"
-                    self.state.transport.serial.write(b"move;" + speed.encode("utf-8") + b"\n")
+                    self._write_serial_line(f"move;{speed}")
 
                 elif command == "stop_move":
-                    self.state.transport.serial.write(b"stop\n")
+                    self._write_serial_line("stop")
 
                 elif command == "turn":
                     turn_motor = parts[1]
                     motor_direction = parts[2] if len(parts) > 2 else "1"
-                    self.state.transport.serial.write(b"turn;" + turn_motor.encode("utf-8") + b";" + motor_direction.encode("utf-8") + b"\n")
+                    self._write_serial_line(f"turn;{turn_motor};{motor_direction}")
 
                 elif command == "stop_turn":
                     turn_motor = parts[1]
-                    self.state.transport.serial.write(b"stop_turn;" + turn_motor.encode("utf-8") + b"\n")
+                    self._write_serial_line(f"stop_turn;{turn_motor}")
 
                 elif command == "two_wheel_turn":
                     turn_direction = parts[1]
-                    self.state.transport.serial.write(b"two_wheel_turn;" + turn_direction.encode("utf-8") + b"\n")
+                    self._write_serial_line(f"two_wheel_turn;{turn_direction}")
 
                 elif command == "stop_two_wheel_turn":
-                    self.state.transport.serial.write(b"stop_two_wheel_turn\n")
+                    self._write_serial_line("stop_two_wheel_turn")
 
                 elif command == "retrieve_log":
                     self.retrieve_actions_log()
                     conn.sendall(self.actions.encode("utf-8"))
 
                 elif command == "exit":
-                    self.work_event.clear()
-                    self.stop()
+                    self._trace("socket requested shutdown")
+                    self.stop(self.state)
                     conn.close()
                     self.sock.close()
                     return
@@ -91,34 +126,46 @@ class RemoteDriveController(Controller):
         
         with ControllerResource(deadzone=0.15) as joystick:
             while joystick.connected:
+                self._drain_serial()
                 joystick.check_presses()
                 
                 if joystick.presses.square:
-                    self.state.transport.serial.write(b"move;"+str(int(joystick.ly*1000)).encode("utf-8")+b"\n")
+                    command = f"move;{int(joystick.ly*1000)}"
+                    self._trace(f"controller action {command}")
+                    self._write_serial_line(command)
                     while not joystick.releases.square:
                         joystick.check_presses()
                         sleep(0.01)
-                    self.state.transport.serial.write(b"stop\n")
+                    self._trace("controller action stop")
+                    self._write_serial_line("stop")
                 elif abs(joystick.lx) > 0.5:
                     # determin motor and turn direction 
                     turn_motor = "right" if joystick.rx > 0 else "left"
                     motor_direction = 1 if joystick.rx > 0 else -1
-                    self.state.transport.serial.write(b"turn;"+turn_motor.encode("utf-8")+b";"+str(motor_direction).encode("utf-8")+b"\n")
+                    command = f"turn;{turn_motor};{motor_direction}"
+                    self._trace(f"controller action {command}")
+                    self._write_serial_line(command)
                     while abs(joystick.lx) > 0.5:
+                        joystick.check_presses()
                         sleep(0.01)
-                    self.state.transport.serial.write(b"stop_turn;"+turn_motor.encode("utf-8")+b"\n")
+                    self._trace(f"controller action stop_turn;{turn_motor}")
+                    self._write_serial_line(f"stop_turn;{turn_motor}")
                 
                 elif joystick.presses.dright or joystick.presses.dleft:
                     turn_direction = -1 if joystick.presses.dright else 1
-                    self.state.transport.serial.write(b"two_wheel_turn;"+str(turn_direction).encode("utf-8")+b"\n")
+                    command = f"two_wheel_turn;{turn_direction}"
+                    self._trace(f"controller action {command}")
+                    self._write_serial_line(command)
                     while not (joystick.releases.dright or joystick.releases.dleft):
+                        joystick.check_presses()
                         sleep(0.01)
-                    self.state.transport.serial.write(b"stop_two_wheel_turn\n")
+                    self._trace("controller action stop_two_wheel_turn")
+                    self._write_serial_line("stop_two_wheel_turn")
                 
                 elif joystick.presses.ls and joystick.presses.rs:
                     self.retrieve_actions_log()
-
-                
+                    print("Actions log:", self.actions)
+                                    
 if __name__ == "__main__":
     controller = RemoteDriveController()
     controller.start_with_controller()
