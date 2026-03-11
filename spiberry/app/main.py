@@ -96,7 +96,8 @@ class Controller:
     def __init__(self):
         self.devices = {}
         self.code = ""
-        
+        self.robot_code_path = ROBOT_CODE
+
         self.observer = Observer()
         self.event_handler = HotReloadHandler(self)
         self.observer.schedule(self.event_handler, ".", recursive=False)
@@ -216,9 +217,9 @@ class Controller:
         return result_string
 
     def run_code(self):
-        with open(ROBOT_CODE, "r") as f:
+        with open(self.robot_code_path, "r") as f:
             self.code = f.read()
-            logger.info("Loaded robot_code.py.")
+            logger.info("Loaded robot code.")
         try:
             logger.info("Entering raw REPL.")
             self.state.transport.enter_raw_repl()
@@ -228,7 +229,7 @@ class Controller:
             logger.critical(f"Error entering raw REPL: {e}")
             sys.exit(1)
         try:
-            logger.info("Executing robot_code.py on device.")
+            logger.info("Executing robot code on device.")
             self.state.transport.exec_raw_no_follow(self.code)
         except transport.TransportError as e:
             # Blink blue 5 times

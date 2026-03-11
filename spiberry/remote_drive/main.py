@@ -10,8 +10,9 @@ DEVICE_TRACE_PREFIX = "TRACE:"
 class RemoteDriveController(Controller):
     def __init__(self):
         self.init_mp_device()
+        self.robot_code_path = os.path.join(os.path.dirname(__file__), "remote_drive_code.py")
         
-        with open(os.path.join(os.path.dirname(__file__), "remote_drive_code.py"), "r") as f:
+        with open(self.robot_code_path, "r") as f:
             self.code = f.read()
 
     def _trace(self, message):

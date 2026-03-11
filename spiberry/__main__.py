@@ -28,7 +28,7 @@ def _getch():
 
 
 VENV_DIR = "venv"
-EXTRACT_DIR = "spiberry_app"
+EXTRACT_DIR = "spiberry"
 
 # ANSI color codes for terminal styling
 class Colors:
@@ -407,6 +407,26 @@ def interactive_pin_menu():
                     editing = True
                     edit_buffer = str(pins[fields[idx][0]])
 
+def fix_permissions(work_dir):
+    """Restore ownership of all files under work_dir to the invoking (non-root) user."""
+    try:
+        uid = int(os.environ["SUDO_UID"])
+        gid = int(os.environ["SUDO_GID"])
+    except (KeyError, ValueError):
+        return  # Not running under sudo, nothing to fix
+
+    for dirpath, dirnames, filenames in os.walk(work_dir):
+        try:
+            os.chown(dirpath, uid, gid)
+        except OSError:
+            pass
+        for name in filenames:
+            try:
+                os.chown(os.path.join(dirpath, name), uid, gid)
+            except OSError:
+                pass
+
+
 def reexec_in_venv(python, extract_dir, app_args):
     env = os.environ.copy()
     existing_pythonpath = env.get("PYTHONPATH")
@@ -442,6 +462,8 @@ def main():
     zip_path = Path(__file__).resolve().parent
     work_dir = Path(os.getcwd())
     
+    Path(work_dir / "spiberryengine.log").touch(exist_ok=True)
+
     if zip_path.parent.parent != Path(os.getcwd()):
         print("Warning: The application is being run from a different directory than where it's located.")
         install_location = input("Install to 1) current directory 2) file directory: ")
@@ -483,6 +505,8 @@ def main():
         pin_args = interactive_pin_menu()
         pin_args = [sys.argv[0]] + [f"{k} {v}" for k, v in pin_args.items()] + sys.argv[1:]
     
+    fix_permissions(work_dir)
+
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
