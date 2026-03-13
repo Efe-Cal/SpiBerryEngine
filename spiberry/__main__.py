@@ -152,6 +152,19 @@ def pip_install(python, extract_dir):
         "-r",
         str(reqs),
     ]
+    try:
+        subprocess.check_call(cmd)
+    except subprocess.CalledProcessError:
+        raise RuntimeError(f"Failed to install packages. Trying to install from PyPI as fallback.")
+
+    cmd = [
+        str(python),
+        "-m",
+        "pip",
+        "install",
+        "-r",
+        str(reqs),
+    ]
 
     subprocess.check_call(cmd)
 

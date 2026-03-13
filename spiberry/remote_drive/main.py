@@ -60,66 +60,65 @@ class RemoteDriveController(Controller):
         conn, addr = self.sock.accept()
         print(f"Connected by {addr}")
         
-        self.run_code()
+        try:
+            self.run_code()
 
-        buffer = ""
-        while True:
-            self._drain_serial()
-            
-            chunk = conn.recv(1024).decode("utf-8")
-            if not chunk:
-                break
+            buffer = ""
+            while True:
+                self._drain_serial()
+                
+                chunk = conn.recv(1024).decode("utf-8")
+                if not chunk:
+                    break
 
-            self._trace(f"socket->host {chunk!r}")
+                self._trace(f"socket->host {chunk!r}")
 
-            buffer += chunk
-            while "\n" in buffer:
-                line, buffer = buffer.split("\n", 1)
-                line = line.strip()
-                if not line:
-                    continue
+                buffer += chunk
+                while "\n" in buffer:
+                    line, buffer = buffer.split("\n", 1)
+                    line = line.strip()
+                    if not line:
+                        continue
 
-                self._trace(f"host parsed command {line}")
+                    self._trace(f"host parsed command {line}")
 
-                parts = line.split(";")
-                command = parts[0]
+                    parts = line.split(";")
+                    command = parts[0]
 
-                if command == "move":
-                    speed = parts[1] if len(parts) > 1 else "0"
-                    self._write_serial_line(f"move;{speed}")
+                    if command == "move":
+                        speed = parts[1] if len(parts) > 1 else "0"
+                        self._write_serial_line(f"move;{speed}")
 
-                elif command == "stop_move":
-                    self._write_serial_line("stop")
+                    elif command == "stop_move":
+                        self._write_serial_line("stop")
 
-                elif command == "turn":
-                    turn_motor = parts[1]
-                    motor_direction = parts[2] if len(parts) > 2 else "1"
-                    self._write_serial_line(f"turn;{turn_motor};{motor_direction}")
+                    elif command == "turn":
+                        turn_motor = parts[1]
+                        motor_direction = parts[2] if len(parts) > 2 else "1"
+                        self._write_serial_line(f"turn;{turn_motor};{motor_direction}")
 
-                elif command == "stop_turn":
-                    turn_motor = parts[1]
-                    self._write_serial_line(f"stop_turn;{turn_motor}")
+                    elif command == "stop_turn":
+                        turn_motor = parts[1]
+                        self._write_serial_line(f"stop_turn;{turn_motor}")
 
-                elif command == "two_wheel_turn":
-                    turn_direction = parts[1]
-                    self._write_serial_line(f"two_wheel_turn;{turn_direction}")
+                    elif command == "two_wheel_turn":
+                        turn_direction = parts[1]
+                        self._write_serial_line(f"two_wheel_turn;{turn_direction}")
 
-                elif command == "stop_two_wheel_turn":
-                    self._write_serial_line("stop_two_wheel_turn")
+                    elif command == "stop_two_wheel_turn":
+                        self._write_serial_line("stop_two_wheel_turn")
 
-                elif command == "retrieve_log":
-                    self.retrieve_actions_log()
-                    conn.sendall(self.actions.encode("utf-8"))
+                    elif command == "retrieve_log":
+                        self.retrieve_actions_log()
+                        conn.sendall(self.actions.encode("utf-8"))
 
-                elif command == "exit":
-                    self._trace("socket requested shutdown")
-                    self.stop(self.state)
-                    conn.close()
-                    self.sock.close()
-                    return
-
-        conn.close()
-        self.sock.close()
+                    elif command == "exit":
+                        self._trace("socket requested shutdown")
+                        self.stop(self.state)
+                        return
+        finally:
+            conn.close()
+            self.sock.close()
 
     def start_with_controller(self):
         from approxeng.input.selectbinder import ControllerResource
