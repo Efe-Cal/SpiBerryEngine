@@ -1,0 +1,9 @@
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, Union
+
+class runloop:
+    @staticmethod
+    def run(*functions: Awaitable[Any]) -> None: ...
+    @staticmethod
+    def sleep_ms(duration: int) -> Awaitable[None]: ...
+    @staticmethod
+    def until(function: Callable[[], bool], timeout: int = 0) -> Awaitable[None]: ...

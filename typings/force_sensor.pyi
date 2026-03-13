@@ -1,0 +1,9 @@
+from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, Union
+
+class force_sensor:
+    @staticmethod
+    def force(port: int) -> int: ...
+    @staticmethod
+    def pressed(port: int) -> bool: ...
+    @staticmethod
+    def raw(port: int) -> int: ...
