@@ -95,16 +95,20 @@ class HotReloadHandler(FileSystemEventHandler):
 class Controller:
     def __init__(self):
         self.devices = {}
+        self.code = ""
+        self.robot_code_path = ROBOT_CODE
 
-        with open(ROBOT_CODE, "r") as f:
-            self.code = f.read()
-            logger.info("Loaded robot_code.py.")
-        
         self.observer = Observer()
         self.event_handler = HotReloadHandler(self)
         self.observer.schedule(self.event_handler, ".", recursive=False)
         self.observer.start()
-        
+
+        self.init_mp_device()
+
+        self.work_event = threading.Event()
+        self.worker_thread = None
+    
+    def init_mp_device(self):
         self.state = State()
 
         try:
@@ -115,10 +119,7 @@ class Controller:
             rgbLED.blink(on_time=0.3, off_time=0.3, n=5, on_color=(1,0,0), off_color=(0,0,0), background=False)
             logger.critical(f"Error connecting to the device: {e}")
             sys.exit(1)
-            
-        self.work_event = threading.Event()
-        self.worker_thread = None
-    
+
     def stop(self, state:State):
         logger.info("Stopping and resetting device connection.")
         commands.do_disconnect(state)
@@ -215,7 +216,10 @@ class Controller:
                     result_string = ""
         return result_string
 
-    def worker(self):
+    def run_code(self):
+        with open(self.robot_code_path, "r") as f:
+            self.code = f.read()
+            logger.info("Loaded robot code.")
         try:
             logger.info("Entering raw REPL.")
             self.state.transport.enter_raw_repl()
@@ -225,7 +229,7 @@ class Controller:
             logger.critical(f"Error entering raw REPL: {e}")
             sys.exit(1)
         try:
-            logger.info("Executing robot_code.py on device.")
+            logger.info("Executing robot code on device.")
             self.state.transport.exec_raw_no_follow(self.code)
         except transport.TransportError as e:
             # Blink blue 5 times
@@ -236,6 +240,10 @@ class Controller:
         # Blink green 2 times (background)
         rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
         logger.info("Code execution started. Awaiting function calls.")
+        
+
+    def worker(self):
+        self.run_code()
         
         while self.work_event.is_set():
             sleep(0.05)
