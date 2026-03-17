@@ -3,20 +3,52 @@ from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, Un
 
 class app:
     class bargraph:
+        """The bargraph module is used make bar graphs in the SPIKE App"""
         @staticmethod
-        def change(color: int, value: float) -> None: ...
+        def change(color: int, value: float) -> None:
+            """Change the value of a bar in the bargraph.
+            
+            Args:
+                color: A color from the color module.
+                value: The value to change by.
+            """
+            ...
         @staticmethod
-        def clear_all() -> None: ...
+        def clear_all() -> None:
+            """Clear all bars in the bargraph."""
+            ...
         @staticmethod
-        def get_value(color: int) -> Awaitable[float]: ...
+        def get_value(color: int) -> Awaitable[float]:
+            """Retrieve the value of a bar in the bargraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def hide() -> None: ...
+        def hide() -> None:
+            """Hide the bargraph in the SPIKE App."""
+            ...
         @staticmethod
-        def set_value(color: int, value: float) -> None: ...
+        def set_value(color: int, value: float) -> None:
+            """Set the value of a bar in the bargraph.
+            
+            Args:
+                color: A color from the color module.
+                value: The value to set.
+            """
+            ...
         @staticmethod
-        def show(fullscreen: bool) -> None: ...
+        def show(fullscreen: bool) -> None:
+            """Show the bargraph in the SPIKE App.
+            
+            Args:
+                fullscreen: Whether to show in full screen.
+            """
+            ...
 
     class display:
+        """The display module is used show images in the SPIKE App"""
         IMAGE_ROBOT_1: int = 1
         IMAGE_ROBOT_2: int = 2
         IMAGE_ROBOT_3: int = 3
@@ -40,62 +72,174 @@ class app:
         IMAGE_RANDOM: int = 21
 
         @staticmethod
-        def hide() -> None: ...
+        def hide() -> None:
+            """Hide the display in the SPIKE App."""
+            ...
         @staticmethod
-        def image(image: int) -> None: ...
+        def image(image: int) -> None:
+            """Show an image on the display in the SPIKE App.
+            
+            Args:
+                image: The ID of the image to show (1-21).
+            """
+            ...
         @staticmethod
-        def show(fullscreen: bool) -> None: ...
+        def show(fullscreen: bool) -> None:
+            """Show the display in the SPIKE App.
+            
+            Args:
+                fullscreen: Whether to show in full screen.
+            """
+            ...
         @staticmethod
-        def text(text: str) -> None: ...
+        def text(text: str) -> None:
+            """Show text on the display in the SPIKE App.
+            
+            Args:
+                text: The text to display.
+            """
+            ...
 
     class linegraph:
+        """The linegraph module is used make line graphs in the SPIKE App"""
         @staticmethod
-        def clear(color: int) -> None: ...
+        def clear(color: int) -> None:
+            """Clear a specific line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def clear_all() -> None: ...
+        def clear_all() -> None:
+            """Clear all lines in the linegraph."""
+            ...
         @staticmethod
-        def get_average(color: int) -> Awaitable[float]: ...
+        def get_average(color: int) -> Awaitable[float]:
+            """Retrieve the average value of a line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def get_last(color: int) -> Awaitable[float]: ...
+        def get_last(color: int) -> Awaitable[float]:
+            """Retrieve the last value of a line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def get_max(color: int) -> Awaitable[float]: ...
+        def get_max(color: int) -> Awaitable[float]:
+            """Retrieve the maximum value of a line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def get_min(color: int) -> Awaitable[float]: ...
+        def get_min(color: int) -> Awaitable[float]:
+            """Retrieve the minimum value of a line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+            """
+            ...
         @staticmethod
-        def hide() -> None: ...
+        def hide() -> None:
+            """Hide the linegraph in the SPIKE App."""
+            ...
         @staticmethod
-        def plot(color: int, x: float, y: float) -> None: ...
+        def plot(color: int, x: float, y: float) -> None:
+            """Plot a point on a line in the linegraph.
+            
+            Args:
+                color: A color from the color module.
+                x: The X value.
+                y: The Y value.
+            """
+            ...
         @staticmethod
-        def show(fullscreen: bool) -> None: ...
+        def show(fullscreen: bool) -> None:
+            """Show the linegraph in the SPIKE App.
+            
+            Args:
+                fullscreen: Whether to show in full screen.
+            """
+            ...
 
     class music:
+        """The music module is used make music in the SPIKE App"""
         DRUM_BASS: int = 2
         DRUM_BONGO: int = 13
         # ... (other DRUM constants)
         INSTRUMENT_PIANO: int = 1
         # ... (other INSTRUMENT constants)
         @staticmethod
-        def play_drum(drum: int) -> None: ...
+        def play_drum(drum: int) -> None:
+            """Play a drum sound in the SPIKE App.
+            
+            Args:
+                drum: The drum ID.
+            """
+            ...
         @staticmethod
-        def play_instrument(instrument: int, note: int, duration: int) -> None: ...
+        def play_instrument(instrument: int, note: int, duration: int) -> None:
+            """Play an instrument note in the SPIKE App.
+            
+            Args:
+                instrument: The instrument ID.
+                note: The MIDI note (0-130).
+                duration: Duration in milliseconds.
+            """
+            ...
 
     class sound:
+        """The sound module is used play sounds in the SPIKE App"""
         @staticmethod
-        def play(sound_name: str, volume: int = 100, pitch: int = 0, pan: int = 0) -> Awaitable[None]: ...
+        def play(sound_name: str, volume: int = 100, pitch: int = 0, pan: int = 0) -> Awaitable[None]:
+            """Play a sound in the SPIKE App.
+            
+            Args:
+                sound_name: The sound name.
+                volume: Volume (0-100).
+                pitch: Pitch adjustment.
+                pan: Pan effect (-100 to 100).
+            """
+            ...
         @staticmethod
-        def set_attributes(volume: int, pitch: int, pan: int) -> None: ...
+        def set_attributes(volume: int, pitch: int, pan: int) -> None:
+            """Set default sound attributes for the SPIKE App.
+            
+            Args:
+                volume: Volume (0-100).
+                pitch: Pitch adjustment.
+                pan: Pan effect (-100 to 100).
+            """
+            ...
         @staticmethod
-        def stop() -> None: ...
+        def stop() -> None:
+            """Stop all sounds currently playing in the SPIKE App."""
+            ...
 
 
     @staticmethod
-    def device_uuid() -> str: ...
+    def device_uuid() -> str:
+        """Retrieve the device UUID."""
+        ...
     @staticmethod
-    def hardware_id() -> str: ...
+    def hardware_id() -> str:
+        """Retrieve the hardware ID."""
+        ...
     @staticmethod
-    def power_off() -> int: ...
+    def power_off() -> int:
+        """Turns off the hub."""
+        ...
     @staticmethod
-    def temperature() -> int: ...
+    def temperature() -> int:
+        """Retrieve the hub temperature in decidegrees Celsius (1/10 degree)."""
+        ...
 
     class button:
         LEFT: int = 1

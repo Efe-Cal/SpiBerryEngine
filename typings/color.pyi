@@ -1,6 +1,7 @@
 from typing import Any, Awaitable, Callable, Iterable, List, Optional, Tuple, Union
 
 class color:
+    """The color module contains constants to use for color matrix, LED lights, and sensors."""
     BLACK: int = 0
     MAGENTA: int = 1
     PURPLE: int = 2
