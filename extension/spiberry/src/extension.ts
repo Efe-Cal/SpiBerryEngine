@@ -86,6 +86,13 @@ async function createInteractiveSshTerminal(sshConnection: NodeSSH, initCommand:
             shellStream.on('close', () => {
                 writeEmitter.fire('\r\nConnection closed by remote host.\r\n');
             });
+
+            shellStream.on('error', (err: any) => {
+                const message = err && err.message ? err.message : String(err);
+                writeEmitter.fire(`\r\nSSH shell error: ${message}\r\n`);
+                shellStream.end();
+                sshConnection.dispose();
+            });
         },
 
         // Fired when the user types in the terminal
