@@ -9,7 +9,11 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:spiberry.setDeviceCredentials",
+    "onCommand:spiberry.installSpiBerryEngine",
+    "onCommand:spiberry.sendCodeToDevice"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
