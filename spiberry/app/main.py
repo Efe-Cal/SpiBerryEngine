@@ -1,3 +1,4 @@
+import os
 import sys
 import re
 import logging
@@ -24,6 +25,12 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger("SpiBerryEngine")
+
+starter_pin = Button(21, pull_up=True)
+if not starter_pin.is_pressed or os.getenv("IGNORE_STARTER_PIN") == "1":
+    logger.critical("Starter pin not connected to ground. Please connect pin 21 to ground to start the program.")
+    sys.exit(1)
+
 
 PRINT_LEVEL = 25
 logging.addLevelName(PRINT_LEVEL, "PRINT")

@@ -9,7 +9,7 @@ WorkingDirectory=<workingdirectory>
 StandardOutput=journal
 StandardError=journal
 Restart=on-failure
-RestartSec=5s
+RestartSec=10s
 User=pi
 Group=pi
 
