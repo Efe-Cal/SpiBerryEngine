@@ -7,6 +7,8 @@ import zipfile
 from pathlib import Path
 import importlib.metadata as metadata
 
+from matplotlib.pylab import f
+
 def _getch():
     """Read a single keypress without waiting for Enter (cross-platform)."""
     if os.name == "nt":
@@ -477,13 +479,13 @@ def main():
     
     Path(work_dir / "spiberryengine.log").touch(exist_ok=True)
 
-    if zip_path.parent.parent != Path(os.getcwd()):
-        print("Warning: The application is being run from a different directory than where it's located.")
-        install_location = input("Install to 1) current directory 2) file directory: ")
-        if install_location == "1":
-            pass
-        elif install_location == "2":
-            work_dir = zip_path.parent
+    # if zip_path.parent.parent != Path(os.getcwd()):
+    #     print("Warning: The application is being run from a different directory than where it's located.")
+    #     install_location = input("Install to 1) current directory 2) zip file's directory: ")
+    #     if install_location == "1":
+    #         pass
+    #     elif install_location == "2":
+    #         work_dir = zip_path.parent
 
     extract_dir = work_dir / EXTRACT_DIR
     venv_path = work_dir / VENV_DIR
