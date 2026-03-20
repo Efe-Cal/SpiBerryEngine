@@ -7,8 +7,6 @@ import zipfile
 from pathlib import Path
 import importlib.metadata as metadata
 
-from matplotlib.pylab import f
-
 def _getch():
     """Read a single keypress without waiting for Enter (cross-platform)."""
     if os.name == "nt":
