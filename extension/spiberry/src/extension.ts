@@ -4,6 +4,46 @@ import * as path from 'path';
 
 const RELEASE_URL = "https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz";
 
+let statusBarItem: vscode.StatusBarItem;
+
+async function checkDeviceReachability(sshConfig: any): Promise<boolean> {
+    const ssh = new NodeSSH();
+    try {
+        await ssh.connect({
+            ...sshConfig,
+            readyTimeout: 5000,
+            connTimeout: 5000
+        });
+        ssh.dispose();
+        return true;
+    } catch (error) {
+        return false;
+    }
+}
+
+async function updateStatusBar(context: vscode.ExtensionContext) {
+    const credentials = await context.secrets.get('deviceCredentials');
+    if (!credentials) {
+        statusBarItem.hide();
+        return;
+    }
+
+    const sshConfig = JSON.parse(credentials);
+    statusBarItem.text = `$(circle-large-outline) Checking ${sshConfig.host}...`;
+    statusBarItem.show();
+
+    const isReachable = await checkDeviceReachability(sshConfig);
+    if (isReachable) {
+        statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
+        statusBarItem.color = new vscode.ThemeColor('debugIcon.startForeground'); // Green-ish
+        statusBarItem.tooltip = 'Device is reachable';
+    } else {
+        statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
+        statusBarItem.color = new vscode.ThemeColor('errorForeground'); // Red
+        statusBarItem.tooltip = 'Device is unreachable';
+    }
+}
+
 async function sendFileToDevice(localFilePath: string, remoteFilePath: string, sshConfig: { host: string; username: string; password: string }) {
     const ssh = new NodeSSH();
     await vscode.window.withProgress({
@@ -81,6 +121,25 @@ export function activate(context: vscode.ExtensionContext) {
 
 	console.log('Congratulations, your extension "spiberry" is now active!');
 
+    statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
+    statusBarItem.command = 'spiberry.setDeviceCredentials';
+    context.subscriptions.push(statusBarItem);
+
+    // Initial check
+    updateStatusBar(context);
+
+    // Periodic check every 15 seconds
+    const interval = setInterval(() => updateStatusBar(context), 15000);
+    context.subscriptions.push({ dispose: () => clearInterval(interval) });
+
+    vscode.workspace.getConfiguration().get('spiberry.autoSendOnSave', true) &&
+    vscode.workspace.onDidSaveTextDocument((document) => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor && editor.document === document) {
+            vscode.commands.executeCommand('spiberry.sendCodeToDevice');
+        }
+    });
+
 
 	const connect = vscode.commands.registerCommand('spiberry.setDeviceCredentials', async () => {
 
@@ -88,7 +147,7 @@ export function activate(context: vscode.ExtensionContext) {
 
 		const host = await vscode.window.showInputBox({
 			prompt: 'Enter the IP address or hostname of the device to connect to',
-			placeHolder: 'e.g., 192.168.1.2',
+			placeHolder: 'e.g., 192.168.1.2 or raspberrypi',
 		});
         if (host) {
             credentials.host = host;
@@ -114,6 +173,7 @@ export function activate(context: vscode.ExtensionContext) {
         // Here you can store the credentials in a secure way
         await context.secrets.store('deviceCredentials', JSON.stringify(credentials)).then(() => {
             vscode.window.showInformationMessage('Device credentials saved successfully!');
+            updateStatusBar(context);
         })
 
 	});

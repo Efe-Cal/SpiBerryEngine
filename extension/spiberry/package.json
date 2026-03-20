@@ -25,7 +25,18 @@
         "command": "spiberry.sendCodeToDevice",
         "title": "Spiberry: Send Code to Device"
       }
-    ]
+    ],
+    "configuration": {
+      "type": "object",
+      "title": "Spiberry Configuration",
+      "properties": {
+        "spiberry.autoSendOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically send code to the device when a file is saved."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
