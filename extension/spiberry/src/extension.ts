@@ -14,10 +14,11 @@ async function checkDeviceReachability(sshConfig: any): Promise<boolean> {
             readyTimeout: 5000,
             connTimeout: 5000
         });
-        ssh.dispose();
         return true;
     } catch (error) {
         return false;
+    } finally {
+        ssh.dispose();
     }
 }
 
