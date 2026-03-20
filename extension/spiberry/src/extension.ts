@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { NodeSSH } from 'node-ssh';
 import * as path from 'path';
+import * as fs from 'fs';
 
 const RELEASE_URL = "https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz";
 
@@ -280,6 +281,49 @@ export function activate(context: vscode.ExtensionContext) {
     });
 
     context.subscriptions.push(install);
+
+    const dumpTypings = vscode.commands.registerCommand('spiberry.installTypings', async () => {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open.');
+            return;
+        }
+
+        const projectRoot = workspaceFolders[0].uri.fsPath;
+        const vscodeDir = path.join(projectRoot, '.vscode');
+        const targetDir = path.join(vscodeDir, 'typings');
+        
+        // Use extensionContext.extensionPath to find the source typings
+        const sourceDir = path.join(context.extensionPath, 'typings');
+
+        try {
+            if (!fs.existsSync(vscodeDir)) {
+                fs.mkdirSync(vscodeDir);
+            }
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir);
+            }
+
+            const files = fs.readdirSync(sourceDir);
+            for (const file of files) {
+                const srcPath = path.join(sourceDir, file);
+                const destPath = path.join(targetDir, file);
+                fs.copyFileSync(srcPath, destPath);
+            }
+
+            await vscode.workspace.getConfiguration('python.analysis').update(
+                'stubPath',
+                './.vscode/typings',
+                vscode.ConfigurationTarget.Workspace
+            );
+
+            vscode.window.showInformationMessage('Successfully dumped SpiBerry typings to .vscode/typings');
+        } catch (err: any) {
+            vscode.window.showErrorMessage(`Failed to dump typings: ${err.message}`);
+        }
+    });
+
+    context.subscriptions.push(dumpTypings);
 }
 
 // This method is called when your extension is deactivated

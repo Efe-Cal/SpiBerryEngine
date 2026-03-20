@@ -9,11 +9,7 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onCommand:spiberry.setDeviceCredentials",
-    "onCommand:spiberry.installSpiBerryEngine",
-    "onCommand:spiberry.sendCodeToDevice"
-  ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
@@ -28,6 +24,10 @@
       {
         "command": "spiberry.sendCodeToDevice",
         "title": "Spiberry: Send Code to Device"
+      },
+      {
+        "command": "spiberry.installTypings",
+        "title": "Spiberry: Install Typings for SPIKE Python v3"
       }
     ],
     "configuration": {
@@ -36,7 +36,7 @@
       "properties": {
         "spiberry.autoSendOnSave": {
           "type": "boolean",
-          "default": true,
+          "default": false,
           "description": "Automatically send code to the device when a file is saved."
         }
       }
