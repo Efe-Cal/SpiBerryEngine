@@ -3,4 +3,4 @@ gpiozero==2.0.1
 mpremote==1.25.0
 pyserial==3.5
 watchdog==6.0.0
-rpi-lgpio
+rpi-lgpio==0.6

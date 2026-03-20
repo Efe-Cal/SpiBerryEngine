@@ -15,6 +15,9 @@ import serial.serialutil
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+from mpremote import commands, transport
+from mpremote.main import State
+
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -57,20 +60,11 @@ button = Button(args.button,pull_up=True)
 supported_devices = ["distance_sensor", "servo"]
 
 try:
-    from mpremote import commands, transport
-    from mpremote.main import State
-except ModuleNotFoundError:
-    # Blink red 5 times
-    rgbLED.blink(on_time=0.1, off_time=0.1, n=5, on_color=(1,0,0), off_color=(0,0,0), background=False)
-    logger.critical("mpremote module not found.")
-    sys.exit(1)
-
-try:
-    import raspi_functions
+    import spiberry.raspi_functions as raspi_functions
 except ImportError:
-    # Blink red 2 times
-    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
-    logger.warning("raspi_functions module not found")
+    os.makedirs("raspi_functions", exist_ok=True)
+    with open("raspi_functions/__init__.py", "w") as f:
+        f.write("# Add your Raspberry Pi functions here\n")
 
 if args.vision:
     import app.vision
@@ -135,7 +129,6 @@ class Controller:
         commands.do_soft_reset(state)
         del self.devices
         self.devices = {}
-
 
     def handle_device_function_call(self, func_call:str):
         result_string = ""
@@ -247,7 +240,6 @@ class Controller:
         # Blink green 2 times (background)
         rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,0), off_color=(0,0,0), background=True)
         logger.info("Code execution started. Awaiting function calls.")
-        
 
     def worker(self):
         self.run_code()

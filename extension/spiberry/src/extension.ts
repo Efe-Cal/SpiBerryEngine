@@ -237,7 +237,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         const username = sshConfig.username || 'pi';
         const remoteDirectory = `/home/${username}/spiberry`;
-        const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : fileName;
+        const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : "raspi_functions/"+fileName;
         const remoteFilePath = `${remoteDirectory}/${remoteFileName}`;
         await sendFileToDevice(localFilePath, remoteFilePath, sshConfig);
 	});
