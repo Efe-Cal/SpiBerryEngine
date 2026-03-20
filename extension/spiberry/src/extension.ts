@@ -132,13 +132,17 @@ export function activate(context: vscode.ExtensionContext) {
     const interval = setInterval(() => updateStatusBar(context), 15000);
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
-    vscode.workspace.getConfiguration().get('spiberry.autoSendOnSave', true) &&
-    vscode.workspace.onDidSaveTextDocument((document) => {
+    const saveListener = vscode.workspace.onDidSaveTextDocument((document) => {
+        const autoSendOnSave = vscode.workspace.getConfiguration().get('spiberry.autoSendOnSave', true);
+        if (!autoSendOnSave) {
+            return;
+        }
         const editor = vscode.window.activeTextEditor;
         if (editor && editor.document === document) {
             vscode.commands.executeCommand('spiberry.sendCodeToDevice');
         }
     });
+    context.subscriptions.push(saveListener);
 
 
 	const connect = vscode.commands.registerCommand('spiberry.setDeviceCredentials', async () => {
