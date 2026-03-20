@@ -23,13 +23,29 @@ async function checkDeviceReachability(sshConfig: any): Promise<boolean> {
 }
 
 async function updateStatusBar(context: vscode.ExtensionContext) {
-    const credentials = await context.secrets.get('deviceCredentials');
+    let credentials;
+    try {
+        credentials = await context.secrets.get('deviceCredentials');
+    } catch (error) {
+        console.error('Error getting credentials:', error);
+        statusBarItem.hide();
+        return;
+    }
+
     if (!credentials) {
         statusBarItem.hide();
         return;
     }
 
-    const sshConfig = JSON.parse(credentials);
+    let sshConfig;
+    try {
+        sshConfig = JSON.parse(credentials);
+    } catch (error) {
+        console.error('Error parsing credentials:', error);
+        statusBarItem.hide();
+        return;
+    }
+
     statusBarItem.text = `$(circle-large-outline) Checking ${sshConfig.host}...`;
     statusBarItem.show();
 
@@ -160,41 +176,45 @@ export function activate(context: vscode.ExtensionContext) {
 		const host = await vscode.window.showInputBox({
 			prompt: 'Enter the IP address or hostname of the device to connect to',
 			placeHolder: 'e.g., 192.168.1.2 or raspberrypi',
+            validateInput: (value) => value.trim() === '' ? 'Hostname is required' : null
 		});
-        if (host) {
-            credentials.host = host;
+        if (!host) {
+            return;
         }
+        credentials.host = host.trim();
 
         const username = await vscode.window.showInputBox({
             prompt: 'Enter the username for the device',
             placeHolder: 'e.g., pi',
+            validateInput: (value) => value.trim() === '' ? 'Username is required' : null
         });
-        if (username) {
-            credentials.username = username;
+        if (!username) {
+            return;
         }
+        credentials.username = username.trim();
 
         const password = await vscode.window.showInputBox({
             prompt: 'Enter the password for the device',
             placeHolder: 'e.g., your_password',
             password: true,
+            validateInput: (value) => value.trim() === '' ? 'Password is required' : null
         });
-        if (password) {
-            credentials.password = password;
+        if (!password) {
+            return;
         }
+        credentials.password = password;
 
         // Here you can store the credentials in a secure way
         await context.secrets.store('deviceCredentials', JSON.stringify(credentials)).then(() => {
             vscode.window.showInformationMessage('Device credentials saved successfully!');
             updateStatusBar(context);
-        })
+        });
 
 	});
 
 	context.subscriptions.push(connect);
 
 	const sendCodeCommand = vscode.commands.registerCommand('spiberry.sendCodeToDevice', async () => {
-
-		vscode.window.showInformationMessage('Sending code to device...');
 
 		const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -205,19 +225,17 @@ export function activate(context: vscode.ExtensionContext) {
         const localFilePath = editor.document.uri.fsPath;
         const fileName = path.basename(localFilePath);
         
-        const sshConfig = await context.secrets.get('deviceCredentials').then((credentials) => {
-            if (!credentials) {
-                vscode.window.showErrorMessage('Device credentials not set. Please set them first.');
-                return;
-            }
-            return JSON.parse(credentials);
-        });
-
-        if (!sshConfig) {
+        const credentials = await context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
+            vscode.commands.executeCommand('spiberry.setDeviceCredentials');
             return;
         }
+        const sshConfig = JSON.parse(credentials);
 
-        const username = (sshConfig as any).username || 'pi';
+        vscode.window.showInformationMessage('Sending code to device...');
+
+        const username = sshConfig.username || 'pi';
         const remoteDirectory = `/home/${username}/spiberry`;
         const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : fileName;
         const remoteFilePath = `${remoteDirectory}/${remoteFileName}`;
@@ -230,20 +248,21 @@ export function activate(context: vscode.ExtensionContext) {
     const install = vscode.commands.registerCommand('spiberry.installSpiBerryEngine', async () => {
         const ssh = new NodeSSH();
         
+        const credentials = await context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
+            vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            return;
+        }
+
         vscode.window.showInformationMessage('Installing SpiBerry Engine on device...');
-        const sshConfig = await context.secrets.get('deviceCredentials').then((credentials) => {
-            if (!credentials) {
-                vscode.window.showErrorMessage('Device credentials not set. Please set them first.');
-                return;
-            }
-            return JSON.parse(credentials);
-        });
+        const sshConfig = JSON.parse(credentials);
 
         const downloadCommand = `curl -L ${RELEASE_URL} -O`;
         let result;
         try {
-            await ssh.connect(sshConfig)
-            result = await ssh.execCommand(downloadCommand)
+            await ssh.connect(sshConfig);
+            result = await ssh.execCommand(downloadCommand);
             if (result.code === 0) {
                 vscode.window.showInformationMessage('SpiBerry Engine downloaded successfully on the device!');
                 createInteractiveSshTerminal(ssh, "python ~/spiberry.pyz");
