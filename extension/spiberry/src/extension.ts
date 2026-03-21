@@ -158,7 +158,7 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
     const saveListener = vscode.workspace.onDidSaveTextDocument((document) => {
-        const autoSendOnSave = vscode.workspace.getConfiguration().get('spiberry.autoSendOnSave', true);
+        const autoSendOnSave = vscode.workspace.getConfiguration().get('spiberry.autoSendOnSave', false);
         if (!autoSendOnSave) {
             return;
         }
