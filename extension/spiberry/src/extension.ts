@@ -283,25 +283,55 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(install);
 
     const dumpTypings = vscode.commands.registerCommand('spiberry.installTypings', async () => {
+        
+        // Ask user whether to install to workspace or global
+        const choice = await vscode.window.showQuickPick(
+            [
+                { label: 'Workspace', description: 'Install typings for current workspace only' },
+                { label: 'Global', description: 'Install typings globally for all Python projects' }
+            ],
+            {
+                placeHolder: 'Where would you like to install the LEGO Spike Python typings?',
+                title: 'Install LEGO Spike Python Typings'
+            }
+        );
+
+        if (!choice) {
+            return; // User cancelled
+        }
+
+        const isGlobal = choice.label === 'Global';
         const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) {
-            vscode.window.showErrorMessage('No workspace folder open.');
+
+        // For workspace install, we need a workspace folder
+        if (!isGlobal && !workspaceFolders) {
+            vscode.window.showErrorMessage('No workspace folder open. Use Global install instead.');
             return;
         }
 
-        const projectRoot = workspaceFolders[0].uri.fsPath;
-        const vscodeDir = path.join(projectRoot, '.vscode');
-        const targetDir = path.join(vscodeDir, 'typings');
-        
         // Use extensionContext.extensionPath to find the source typings
         const sourceDir = path.join(context.extensionPath, 'typings');
 
+        // Get the target directory and stubPath based on installation type
+        let targetDir: string;
+        let stubPath: string;
+
+        if (isGlobal) {
+            // For global installation, use VS Code's global storage path
+            // We'll use the extension's globalStoragePath instead of workspace
+            const globalStorageDir = context.globalStorageUri.fsPath;
+            targetDir = path.join(globalStorageDir, 'typings');
+            stubPath = targetDir;
+        } else {
+            const projectRoot = workspaceFolders![0].uri.fsPath;
+            const vscodeDir = path.join(projectRoot, '.vscode');
+            targetDir = path.join(vscodeDir, 'typings');
+            stubPath = './.vscode/typings';
+        }
+
         try {
-            if (!fs.existsSync(vscodeDir)) {
-                fs.mkdirSync(vscodeDir);
-            }
             if (!fs.existsSync(targetDir)) {
-                fs.mkdirSync(targetDir);
+                fs.mkdirSync(targetDir, { recursive: true });
             }
 
             const files = fs.readdirSync(sourceDir);
@@ -311,13 +341,19 @@ export function activate(context: vscode.ExtensionContext) {
                 fs.copyFileSync(srcPath, destPath);
             }
 
+            // Determine configuration target
+            const configTarget = isGlobal
+                ? vscode.ConfigurationTarget.Global
+                : vscode.ConfigurationTarget.Workspace;
+
             await vscode.workspace.getConfiguration('python.analysis').update(
                 'stubPath',
-                './.vscode/typings',
-                vscode.ConfigurationTarget.Workspace
+                stubPath,
+                configTarget
             );
 
-            vscode.window.showInformationMessage('Successfully dumped SpiBerry typings to .vscode/typings');
+            const location = isGlobal ? 'globally' : 'to .vscode/typings';
+            vscode.window.showInformationMessage(`Successfully dumped SpiBerry typings ${location}`);
         } catch (err: any) {
             vscode.window.showErrorMessage(`Failed to dump typings: ${err.message}`);
         }
