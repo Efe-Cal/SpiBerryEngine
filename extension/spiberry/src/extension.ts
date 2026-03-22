@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { NodeSSH } from 'node-ssh';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as https from 'https';
 
 const RELEASE_URL = "https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz";
 
@@ -259,23 +260,42 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.window.showInformationMessage('Installing SpiBerry Engine on device...');
         const sshConfig = JSON.parse(credentials);
 
-        const downloadCommand = `curl -L ${RELEASE_URL} -O`;
-        let result;
+        // Download file to extension's directory first
+        const localFilePath = path.join(context.extensionPath, 'spiberry.pyz');
+        
         try {
+            // Download the file locally using Node.js https
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Downloading SpiBerry Engine...',
+                cancellable: false
+            }, async () => {
+                return new Promise<void>((resolve, reject) => {
+                    const file = fs.createWriteStream(localFilePath);
+                    https.get(RELEASE_URL, (response) => {
+                        response.pipe(file);
+                        file.on('finish', () => {
+                            file.close();
+                            resolve();
+                        });
+                    }).on('error', (err) => {
+                        fs.unlink(localFilePath, () => {});
+                        reject(err);
+                    });
+                });
+            });
+
+            vscode.window.showInformationMessage('SpiBerry Engine downloaded locally. Uploading to device...');
+            
+            // Upload to device
             await ssh.connect(sshConfig);
-            result = await ssh.execCommand(downloadCommand);
-            if (result.code === 0) {
-                vscode.window.showInformationMessage('SpiBerry Engine downloaded successfully on the device!');
-                createInteractiveSshTerminal(ssh, "python ~/spiberry.pyz");
-            } else {
-                vscode.window.showErrorMessage(`Failed to download SpiBerry Engine: ${result.stderr}`);
-            }
+            await ssh.putFile(localFilePath, '/home/' + sshConfig.username + '/spiberry.pyz');
+            
+            vscode.window.showInformationMessage('SpiBerry Engine uploaded successfully on the device!');
+            createInteractiveSshTerminal(ssh, "python ~/spiberry.pyz");
         } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to connect to device: ${error.message}`);
-        } finally {
-            if (result && result.code !== 0) {
-                ssh.dispose();
-            }
+            vscode.window.showErrorMessage(`Failed to install SpiBerry Engine: ${error.message}`);
+            ssh.dispose();
         }
 
     });
