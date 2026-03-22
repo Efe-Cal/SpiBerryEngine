@@ -4,6 +4,8 @@ A project that aims to primarily control Lego Spike with a Raspberry Pi.
 It uses the `mpremote` tool to communicate with the Lego Spike hub.
 I believe it can also be used with other micropython devices.
 
+<small>Note: See [the VS Code Extension](extension/spiberry/README.md) for easier installation and code deployment.</small>
+
 ## Installation
 
 ### Installing the Engine
