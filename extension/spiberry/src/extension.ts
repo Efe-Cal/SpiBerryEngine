@@ -271,17 +271,35 @@ export function activate(context: vscode.ExtensionContext) {
                 cancellable: false
             }, async () => {
                 return new Promise<void>((resolve, reject) => {
-                    const file = fs.createWriteStream(localFilePath);
-                    https.get(RELEASE_URL, (response) => {
-                        response.pipe(file);
-                        file.on('finish', () => {
-                            file.close();
-                            resolve();
+                    const downloadFile = (url: string) => {
+                        https.get(url, (response) => {
+                            if (response.statusCode === 301 || response.statusCode === 302) {
+                                // Handle redirect
+                                downloadFile(response.headers.location!);
+                                return;
+                            }
+                            
+                            if (response.statusCode !== 200) {
+                                reject(new Error(`Failed to download: Status Code ${response.statusCode}`));
+                                return;
+                            }
+
+                            const file = fs.createWriteStream(localFilePath);
+                            response.pipe(file);
+                            file.on('finish', () => {
+                                file.close();
+                                resolve();
+                            });
+                            file.on('error', (err) => {
+                                fs.unlink(localFilePath, () => {});
+                                reject(err);
+                            });
+                        }).on('error', (err) => {
+                            fs.unlink(localFilePath, () => {});
+                            reject(err);
                         });
-                    }).on('error', (err) => {
-                        fs.unlink(localFilePath, () => {});
-                        reject(err);
-                    });
+                    };
+                    downloadFile(RELEASE_URL);
                 });
             });
 
@@ -292,7 +310,7 @@ export function activate(context: vscode.ExtensionContext) {
             await ssh.putFile(localFilePath, '/home/' + sshConfig.username + '/spiberry.pyz');
             
             vscode.window.showInformationMessage('SpiBerry Engine uploaded successfully on the device!');
-            createInteractiveSshTerminal(ssh, "python ~/spiberry.pyz");
+            createInteractiveSshTerminal(ssh, "sudo python ~/spiberry.pyz\r\n"+sshConfig.password + "\r\n");
         } catch (error: any) {
             vscode.window.showErrorMessage(`Failed to install SpiBerry Engine: ${error.message}`);
             ssh.dispose();
