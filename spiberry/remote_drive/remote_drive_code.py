@@ -23,46 +23,6 @@ SOL_TEKER = port.A
 SAG_TEKER = port.B
 
 
-class Device:
-    def __init__(self, device_type, device_name, *args):
-        self.device_type = device_type
-        self.device_name = device_name
-        self.args = args
-
-    def __repr__(self):
-        return f"Device(type={self.device_type}, name={self.device_name}, args={self.args})"
-
-class Servo(Device):
-    def get_angle(self, timeout=1):
-        print(f";devices.{self.device_name}.get_angle();")
-        return sys.stdin.readline().strip()
-    def set_angle(self, angle, timeout=2):
-        print(f";devices.{self.device_name}.set_angle({angle});")
-        return sys.stdin.readline().strip()
-
-class DistanceSensor(Device):
-    def get_distance(self, timeout=1):
-        print(f";devices.{self.device_name}.get_distance();")
-        return sys.stdin.readline().strip()
-
-class Raspi:
-    def register_device(self, device_type, device_name, *args, timeout=1):
-        print(f";devices.register({device_type}, {device_name}, {', '.join(args)});")
-        sys.stdin.readline().strip()
-
-        if device_type == "servo":
-            return Servo(device_type, device_name, *args)
-        elif device_type == "distance_sensor":
-            return DistanceSensor(device_type, device_name, *args)
-        else:
-            raise ValueError(f"Unsupported device type: {device_type}")
-    def func(self, func_string):
-        print(f";raspi_functions.{func_string};")
-        r = sys.stdin.readline().strip()
-        print(r)
-        return r
-
-
 def getGyro():
     return -1*motion_sensor.tilt_angles()[0]
 

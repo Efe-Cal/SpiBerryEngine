@@ -1,6 +1,8 @@
 import os
 import sys
 import re
+import ast
+import json
 import logging
 import threading
 import argparse
@@ -57,7 +59,32 @@ ROBOT_CODE = args.code_path
 rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
 button = Button(args.button,pull_up=True)
 
-supported_devices = ["distance_sensor", "servo"]
+# Device constructor map - maps device type to constructor function
+# Each entry: (min_params, constructor_lambda)
+DEVICE_CONSTRUCTORS = {
+    "distance_sensor": (3, lambda params: gpiozero.DistanceSensor(
+        echo=int(params[0]),
+        trigger=int(params[1]),
+        max_distance=float(params[2]),
+    )),
+    "servo": (1, lambda params: (
+        gpiozero.AngularServo(int(params[0])) 
+        if len(params) == 1 
+        else gpiozero.AngularServo(
+            int(params[0]),
+            min_angle=int(params[1]),
+            max_angle=int(params[2]),
+            min_pulse_width=float(params[3]),
+            max_pulse_width=float(params[4]),
+            initial_angle=int(params[5]),
+        )
+    )),
+}
+
+# Additional parameter requirements: servo needs 6 params for full config
+DEVICE_PARAM_REQUIREMENTS = {
+    "servo": {"full_config": 6},
+}
 
 try:
     import spiberry.raspi_functions as raspi_functions
@@ -67,7 +94,7 @@ except ImportError:
         f.write("# Add your Raspberry Pi functions here\n")
 
 if args.vision:
-    import app.vision
+    import app.vision as vision
     logger.info("Vision module loaded.")
 
 
@@ -98,6 +125,15 @@ class Controller:
         self.devices = {}
         self.code = ""
         self.robot_code_path = ROBOT_CODE
+        self.vision_camera = None
+        self.vision_model = None
+        self.vision_contour = None
+        self.vision_cache = {
+            "latest_image": None,
+            "latest_detections": None,
+            "latest_center_points": None,
+            "latest_contours": None,
+        }
 
         self.observer = Observer()
         self.event_handler = HotReloadHandler(self)
@@ -108,6 +144,7 @@ class Controller:
 
         self.work_event = threading.Event()
         self.worker_thread = None
+            
     
     def init_mp_device(self):
         self.state = State()
@@ -130,38 +167,71 @@ class Controller:
         del self.devices
         self.devices = {}
 
-    def handle_device_function_call(self, func_call:str):
-        result_string = ""
-        function, params = func_call.split("(")
-        function = function.split(".")[1:]
-        inside_paranthesis = params[:-1]
-        params = inside_paranthesis.split(",") # type, name, pin(s), arg(s)
-        params = [p.strip() for p in params]
-        
-        # devices.register(servo, s1, 17)
-        # devices.register(distance_sensor, d1, 15, 16, 4)
-        if len(function) == 1:
-            if params and params[0] in supported_devices:
-                if params[0] == "distance_sensor":
-                    self.devices[params[1]] = gpiozero.DistanceSensor(echo=int(params[2]), trigger=int(params[3]), max_distance=float(params[4]))
-                elif params[0] == "servo":
-                    self.devices[params[1]] = gpiozero.AngularServo(int(params[2]),min_angle=int(params[3]),max_angle=int(params[4]),min_pulse_width=float(params[5]),max_pulse_width=float(params[6]),initial_angle=int(params[7]))
-        # devices.d1.get_distance()
-        # devices.s1.set_angle(90)
-        elif len(function) == 2:
-            if function[0] in self.devices.keys():
-                if "get_distance" in function[1]:
-                    result_string = str(self.devices[function[0]].distance*100)
-                elif "get_angle" in function[1]:
-                    result_string = str(self.devices[function[0]].angle)
-                elif "set_angle" in function[1]:
-                    angle = params[0]
-                    self.devices[function[0]].angle = int(angle)
-                    result_string = f"Set angle of {function[1]} to {angle}"
-                else:
-                    result_string = "error-unknown_device"
-                    logger.warning(f"Unknown device function: {function[0]}")
-        return result_string
+    def handle_device_function_call(self, func_call:str=None, parsed=None):
+        parsed_or_error = self._resolve_and_validate_call(
+            func_call,
+            parsed,
+            namespace="devices",
+            error_code="error-invalid_device_function_format",
+            warn_label="device",
+        )
+        if isinstance(parsed_or_error, str):
+            return parsed_or_error
+        path, args_list, kwargs = parsed_or_error
+
+        # devices.register(device_type, device_name, ...)
+        if len(path) == 2 and path[1] == "register":
+            if len(args_list) < 2:
+                return self._result_payload("error", code="error-invalid_args", message="register requires device_type and device_name")
+
+            device_type = str(args_list[0])
+            device_name = str(args_list[1])
+            params = args_list[2:]
+
+            if device_type not in DEVICE_CONSTRUCTORS:
+                return self._result_payload("error", code="error-unsupported_device", device_type=device_type)
+
+            required_min, constructor = DEVICE_CONSTRUCTORS[device_type]
+            
+            # Handle special parameter requirements
+            if device_type == "distance_sensor" and len(params) < required_min:
+                return self._result_payload("error", code="error-invalid_args", message="distance_sensor requires echo, trigger, max_distance")
+            if device_type == "servo" and len(params) not in (1, 6):
+                return self._result_payload("error", code="error-invalid_args", message="servo requires pin or full config")
+
+            try:
+                self.devices[device_name] = constructor(params)
+            except Exception as e:
+                logger.error("Device registration failed for %s: %s", device_name, e)
+                return self._result_payload("error", code="error-device_register_failed", message=str(e))
+
+            return self._result_payload("ok", action="devices.register", device_type=device_type, device_name=device_name)
+
+        # devices.<device_name>.<method>(...)
+        if len(path) == 3:
+            device_name = path[1]
+            method = path[2]
+
+            if device_name not in self.devices:
+                return self._result_payload("error", code="error-unknown_device", device_name=device_name)
+
+            device = self.devices[device_name]
+            if method == "get_distance":
+                value = float(device.distance * 100)
+                return self._result_payload("ok", action="devices.get_distance", device_name=device_name, value=value)
+            if method == "get_angle":
+                value = device.angle
+                return self._result_payload("ok", action="devices.get_angle", device_name=device_name, value=value)
+            if method == "set_angle":
+                angle = kwargs.get("angle", args_list[0] if args_list else None)
+                if angle is None:
+                    return self._result_payload("error", code="error-invalid_args", message="set_angle requires angle")
+                device.angle = int(angle)
+                return self._result_payload("ok", action="devices.set_angle", device_name=device_name, value=int(angle))
+
+            return self._result_payload("error", code="error-unknown_device_method", target=f"{device_name}.{method}")
+
+        return self._result_payload("error", code="error-invalid_device_function_format")
 
     def read_function_call(self, state:State):
         try:
@@ -192,29 +262,343 @@ class Controller:
         
         return func_call
 
+    def _parse_ast_value(self, node):
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.UnaryOp):
+            # Allow signed numeric literals like -30 or +5 in call args.
+            return ast.literal_eval(node)
+        if isinstance(node, ast.Name):
+            # Keep compatibility with existing protocol where bare tokens are sent.
+            return node.id
+        if isinstance(node, (ast.List, ast.Tuple, ast.Dict)):
+            return ast.literal_eval(node)
+        raise ValueError("Unsupported argument type")
+
+    def _parse_structured_call(self, func_call: str):
+        parsed = ast.parse(func_call, mode="eval")
+        if not isinstance(parsed.body, ast.Call):
+            raise ValueError("Function call expected")
+
+        call_node = parsed.body
+        func_node = call_node.func
+        path = []
+        while isinstance(func_node, ast.Attribute):
+            path.insert(0, func_node.attr)
+            func_node = func_node.value
+        if isinstance(func_node, ast.Name):
+            path.insert(0, func_node.id)
+        else:
+            raise ValueError("Invalid function path")
+
+        args = [self._parse_ast_value(a) for a in call_node.args]
+        kwargs = {}
+        for kw in call_node.keywords:
+            if kw.arg is None:
+                raise ValueError("Star-args are not supported")
+            kwargs[kw.arg] = self._parse_ast_value(kw.value)
+        return path, args, kwargs
+
+    def _resolve_and_validate_call(self, func_call, parsed, namespace, error_code, warn_label):
+        if parsed is None:
+            try:
+                parsed = self._parse_structured_call(func_call)
+            except Exception as e:
+                logger.warning("Invalid %s function call format '%s': %s", warn_label, func_call, e)
+                return self._result_payload("error", code=error_code)
+
+        path, args_list, kwargs = parsed
+        if len(path) < 2 or path[0] != namespace:
+            return self._result_payload("error", code=error_code)
+        return path, args_list, kwargs
+
+    @staticmethod
+    def _arg(args_list, kwargs, key, idx, default=None):
+        if key in kwargs:
+            return kwargs[key]
+        if idx is not None and len(args_list) > idx:
+            return args_list[idx]
+        return default
+
+    def _require_cached_image(self):
+        image = self.vision_cache["latest_image"]
+        if image is None:
+            return None, self._result_payload("error", code="error-missing_cached_image")
+        return image, None
+
+    @staticmethod
+    def _result_payload(status: str = "ok", **data):
+        payload = {"status": status}
+        payload.update(data)
+        return json.dumps(payload)
+
+    @staticmethod
+    def _json_safe(value):
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        if isinstance(value, (list, tuple)):
+            return [Controller._json_safe(v) for v in value]
+        if isinstance(value, dict):
+            return {str(k): Controller._json_safe(v) for k, v in value.items()}
+        return str(value)
+
+    def _dispatch_raspi_function_call(self, path, args_list, kwargs):
+        if len(path) < 2 or path[0] != "raspi_functions":
+            return self._result_payload("error", code="error-invalid_raspi_function_format")
+
+        target = raspi_functions
+        for attr in path[1:]:
+            if not hasattr(target, attr):
+                return self._result_payload("error", code="error-unknown_raspi_function", target=".".join(path[1:]))
+            target = getattr(target, attr)
+
+        if not callable(target):
+            return self._result_payload("error", code="error-rpi_target_not_callable", target=".".join(path[1:]))
+
+        try:
+            result = target(*args_list, **kwargs)
+        except Exception as e:
+            logger.error("Exception in raspi function call '%s': %s", ".".join(path), e)
+            return self._result_payload("error", code="error-raspi_function_exception", message=str(e))
+
+        return self._result_payload(
+            "ok",
+            action=f"raspi_functions.{'.'.join(path[1:])}",
+            result=self._json_safe(result),
+        )
+
+    def _initialize_vision_runtime(self, args_list, kwargs):
+        if not args.vision:
+            return self._result_payload("error", code="error-vision_module_disabled")
+
+        # Positional compatibility:
+        # vision.initialize(take_picture_method, camera_config, model_path)
+        take_picture_method = kwargs.get("take_picture_method", "picamera2")
+        camera_config = kwargs.get("camera_config", None)
+        model_path = kwargs.get("model_path", "yolo26n.pt")
+
+        if len(args_list) > 0:
+            take_picture_method = args_list[0]
+        if len(args_list) > 1:
+            camera_config = args_list[1]
+        if len(args_list) > 2:
+            model_path = args_list[2]
+
+        try:
+            camera = vision.Camera(take_picture_method=take_picture_method, camera_config=camera_config)
+            vision_model = vision.Vision(model_path=model_path, camera=camera)
+            contour = vision.ContourDetector(camera=camera)
+        except Exception as e:
+            logger.error("Vision initialization failed: %s", e)
+            return self._result_payload("error", code="error-vision_initialize_failed", message=str(e))
+
+        self.vision_camera = camera
+        self.vision_model = vision_model
+        self.vision_contour = contour
+        self.vision_cache = {
+            "latest_image": None,
+            "latest_detections": None,
+            "latest_center_points": None,
+            "latest_contours": None,
+        }
+
+        return self._result_payload(
+            "ok",
+            action="initialize",
+            take_picture_method=take_picture_method,
+            model_path=model_path,
+        )
+
+    def _dispatch_camera_call(self, method: str, args_list, kwargs):
+        if self.vision_camera is None:
+            return self._result_payload("error", code="error-vision_not_initialized")
+
+        if method == "start":
+            self.vision_camera.start()
+            return self._result_payload("ok", action="Camera.start")
+        if method == "stop":
+            self.vision_camera.stop()
+            return self._result_payload("ok", action="Camera.stop")
+        if method == "take_picture":
+            image = self.vision_camera.take_picture()
+            if image is None:
+                return self._result_payload("error", code="error-camera_capture_failed")
+            self.vision_cache["latest_image"] = image
+            return self._result_payload(
+                "ok",
+                action="Camera.take_picture",
+                shape=list(image.shape),
+            )
+        return self._result_payload("error", code="error-unknown_vision_method", target=f"Camera.{method}")
+
+    def _dispatch_vision_call(self, method: str, args_list, kwargs):
+        if self.vision_model is None:
+            return self._result_payload("error", code="error-vision_not_initialized")
+
+        if method == "load_model":
+            model_name = self._arg(args_list, kwargs, "model", 0)
+            if not isinstance(model_name, str) or model_name == "":
+                return self._result_payload("error", code="error-invalid_args", message="load_model requires model path")
+            self.vision_model.load_model(model_name)
+            return self._result_payload("ok", action="Vision.load_model", model=model_name)
+
+        if method == "find_objects":
+            model_name = self._arg(args_list, kwargs, "model_name", 0)
+            if not isinstance(model_name, str) or model_name == "":
+                return self._result_payload("error", code="error-invalid_args", message="find_objects requires model_name")
+            detections, center_points = self.vision_model.find_objects(model_name)
+            self.vision_cache["latest_detections"] = detections
+            self.vision_cache["latest_center_points"] = center_points
+            return self._result_payload(
+                "ok",
+                action="Vision.find_objects",
+                detections_count=len(detections),
+                center_points_count=len(center_points),
+            )
+
+        if method == "detect_objects_from_image":
+            model_name = self._arg(args_list, kwargs, "model_name", 0)
+            image, error_payload = self._require_cached_image()
+            if error_payload:
+                return error_payload
+            if not isinstance(model_name, str) or model_name == "":
+                return self._result_payload("error", code="error-invalid_args", message="detect_objects_from_image requires model_name")
+            detections = self.vision_model.detect_objects_from_image(image, model_name)
+            self.vision_cache["latest_detections"] = detections
+            return self._result_payload(
+                "ok",
+                action="Vision.detect_objects_from_image",
+                detections_count=len(detections),
+            )
+
+        return self._result_payload("error", code="error-unknown_vision_method", target=f"Vision.{method}")
+
+    def _dispatch_contour_call(self, method: str, args_list, kwargs):
+        if self.vision_contour is None:
+            return self._result_payload("error", code="error-vision_not_initialized")
+
+        if method == "detect_contours":
+            image, error_payload = self._require_cached_image()
+            if error_payload:
+                return error_payload
+
+            filters = kwargs.get("filters")
+            if filters is None and args_list:
+                filters = args_list[0] if isinstance(args_list[0], dict) else None
+            if filters is None:
+                filter_keys = ("min_area", "max_area", "color", "n", "vertices")
+                if any(k in kwargs for k in filter_keys):
+                    filters = {k: kwargs[k] for k in filter_keys if k in kwargs}
+
+            contours = self.vision_contour.detect_contours(image, filters=filters)
+            self.vision_cache["latest_contours"] = contours
+            return self._result_payload(
+                "ok",
+                action="ContourDetector.detect_contours",
+                detections_count=0 if contours is None else len(contours),
+            )
+
+        if method == "crop_image":
+            image, error_payload = self._require_cached_image()
+            if error_payload:
+                return error_payload
+
+            x = self._arg(args_list, kwargs, "x", 0)
+            y = self._arg(args_list, kwargs, "y", 1)
+            w = self._arg(args_list, kwargs, "w", 2)
+            h = self._arg(args_list, kwargs, "h", 3)
+
+            if None in (x, y, w, h):
+                return self._result_payload("error", code="error-invalid_args", message="crop_image requires x, y, w, h")
+
+            cropped = self.vision_contour.crop_image(image, int(x), int(y), int(w), int(h))
+            self.vision_cache["latest_image"] = cropped
+            return self._result_payload("ok", action="ContourDetector.crop_image", shape=list(cropped.shape))
+
+        if method == "extend_color_range":
+            color_range = self._arg(args_list, kwargs, "color_range", 0)
+            offset = self._arg(args_list, kwargs, "offset", 1)
+            if color_range is None:
+                return self._result_payload("error", code="error-invalid_args", message="extend_color_range requires color_range")
+            extended = self.vision_contour.extend_color_range(color_range, offset=offset)
+            return self._result_payload("ok", action="ContourDetector.extend_color_range", ranges=extended)
+
+        if method == "extend_all_color_ranges":
+            color_ranges = self._arg(args_list, kwargs, "color_ranges", 0)
+            offset = self._arg(args_list, kwargs, "offset", 1)
+            if color_ranges is None:
+                return self._result_payload("error", code="error-invalid_args", message="extend_all_color_ranges requires color_ranges")
+            extended = self.vision_contour.extend_all_color_ranges(color_ranges, offset=offset)
+            return self._result_payload("ok", action="ContourDetector.extend_all_color_ranges", color_ranges=extended)
+
+        if method == "load_config":
+            config = self.vision_contour.load_config()
+            self.vision_contour.config = config
+            return self._result_payload("ok", action="ContourDetector.load_config")
+
+        return self._result_payload("error", code="error-unknown_vision_method", target=f"ContourDetector.{method}")
+
+    def handle_vision_function_call(self, func_call:str=None, parsed=None):
+        parsed_or_error = self._resolve_and_validate_call(
+            func_call,
+            parsed,
+            namespace="vision",
+            error_code="error-invalid_vision_function_format",
+            warn_label="vision",
+        )
+        if isinstance(parsed_or_error, str):
+            return parsed_or_error
+        path, args_list, kwargs = parsed_or_error
+
+        if len(path) == 2 and path[1] == "initialize":
+            return self._initialize_vision_runtime(args_list, kwargs)
+
+        if len(path) != 3:
+            return self._result_payload("error", code="error-invalid_vision_function_format")
+
+        class_name, method_name = path[1], path[2]
+        if class_name == "Camera":
+            return self._dispatch_camera_call(method_name, args_list, kwargs)
+        if class_name == "Vision":
+            return self._dispatch_vision_call(method_name, args_list, kwargs)
+        if class_name == "ContourDetector":
+            return self._dispatch_contour_call(method_name, args_list, kwargs)
+
+        return self._result_payload("error", code="error-unknown_vision_class", target=class_name)
+
     def run_function(self, func_call:str):
         result_string = ""
-        if not func_call=="" and func_call.isprintable():
-            if "devices" in func_call:
-                # devics.
-                try:
-                    result_string = self.handle_device_function_call(func_call)
-                except Exception as e:
-                    logger.error(f"Error processing device function call '{func_call}': {e}")
-                    result_string = "error-unknown"
-            else:
-                # raspi_functions.
-                try:
-                    logger.info(f"Evaluating function call: {func_call}")
-                    result_string = eval(func_call)
-                except(NameError, AttributeError)as e:
-                    rgbLED.blink(on_time=0.3, off_time=0.3, n=2, on_color=(0, 0, 1), off_color=(0, 0, 0), background=False)
-                    logger.warning(f"NameError/AttributeError in function call '{func_call}': {e}")
-                    result_string = ""
-                except Exception as e:
-                    logger.error(f"Exception in function call '{func_call}': {e}")
-                    result_string = ""
-        return result_string
+        if func_call == "" or not func_call.isprintable():
+            return result_string
+
+        try:
+            path, args_list, kwargs = self._parse_structured_call(func_call)
+        except Exception as e:
+            logger.warning("Invalid function call '%s': %s", func_call, e)
+            return self._result_payload("error", code="error-invalid_function_call_format")
+
+        root = path[0] if path else None
+
+        if root == "devices":
+            try:
+                return self.handle_device_function_call(parsed=(path, args_list, kwargs))
+            except Exception as e:
+                logger.error("Error processing device function call '%s': %s", func_call, e)
+                return self._result_payload("error", code="error-device_dispatch_failure", message=str(e))
+
+        if root == "vision":
+            if not args.vision:
+                return self._result_payload("error", code="error-vision_module_disabled")
+            try:
+                return self.handle_vision_function_call(parsed=(path, args_list, kwargs))
+            except Exception as e:
+                logger.error("Error processing vision function call '%s': %s", func_call, e)
+                return self._result_payload("error", code="error-vision_dispatch_failure", message=str(e))
+
+        if root == "raspi_functions":
+            return self._dispatch_raspi_function_call(path, args_list, kwargs)
+
+        return self._result_payload("error", code="error-unknown_call_namespace", target=str(root))
 
     def run_code(self):
         with open(self.robot_code_path, "r") as f:
