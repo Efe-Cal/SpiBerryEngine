@@ -65,10 +65,6 @@ class Device:
         self.device_name = device_name
         self.args = args
 
-
-    def __repr__(self):
-        return f"Device(type={self.device_type}, name={self.device_name}, args={self.args})"
-
 class Servo(Device):
     def get_angle(self, timeout=1):
         print(f";devices.{self.device_name}.get_angle();")
@@ -128,10 +124,23 @@ class Raspi:
         else:
             raise ValueError(f"Unsupported device type: {device_type}")
 
+    def _invoke_raspi_function(self, func_name, *args, **kwargs):
+        parts = [_lit(arg) for arg in args]
+        parts.extend([f"{key}={_lit(value)}" for key, value in kwargs.items()])
+        call_args = ", ".join(parts)
+        payload = _call(f"raspi_functions.{func_name}({call_args})")
+        if payload.get("status") == "ok":
+            return payload.get("result")
+        return payload
+
+    def __getattr__(self, name):
+        def _dynamic_func(*args, **kwargs):
+            return self._invoke_raspi_function(name, *args, **kwargs)
+
+        return _dynamic_func
+
     def func(self, func_string):
-        print(f";raspi_functions.{func_string};")
-        payload = _read_payload(sys.stdin.readline().strip())
-        print(payload)
+        payload = _call(f"raspi_functions.{func_string}")
         if payload.get("status") == "ok":
             return payload.get("result")
         return payload
