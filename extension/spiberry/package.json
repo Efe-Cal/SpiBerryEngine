@@ -28,6 +28,10 @@
       {
         "command": "spiberry.installTypings",
         "title": "Spiberry: Install Typings for SPIKE Python v3"
+      },
+      {
+        "command": "spiberry.insertRaspiUtilClasses",
+        "title": "Spiberry: Insert Raspi Util Classes"
       }
     ],
     "configuration": {

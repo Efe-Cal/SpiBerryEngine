@@ -246,6 +246,49 @@ export function activate(context: vscode.ExtensionContext) {
 
 	context.subscriptions.push(sendCodeCommand);
 
+    const insertRaspiUtilClass = vscode.commands.registerCommand('spiberry.insertRaspiUtilClasses', async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+            vscode.window.showErrorMessage('No active editor found to insert into.');
+            return;
+        }
+
+        const utilClassPath = path.join(context.extensionPath, 'raspi-util-class.py');
+        if (!fs.existsSync(utilClassPath)) {
+            vscode.window.showErrorMessage('Could not find raspi-util-class.py in the extension directory.');
+            return;
+        }
+
+        try {
+            const utilClassContent = fs.readFileSync(utilClassPath, 'utf8').replace(/\r?\n$/, '');
+            const wrappedContent = [
+                '',
+                '# region spiberry: raspi util classes',
+                utilClassContent,
+                '# endregion',
+                '',
+            ].join('\n');
+
+            const inserted = await editor.edit((editBuilder) => {
+                editBuilder.insert(editor.selection.active, wrappedContent);
+            });
+
+            if (!inserted) {
+                vscode.window.showErrorMessage('Failed to insert raspi util class content.');
+                return;
+            }
+
+            // Move cursor to the end of the newly inserted content
+            const endPosition = editor.selection.active;
+            
+            vscode.window.showInformationMessage('Inserted raspi util class with region folding markers.');
+        } catch (error: any) {
+            vscode.window.showErrorMessage(`Failed to read or insert raspi util class: ${error.message}`);
+        }
+    });
+
+    context.subscriptions.push(insertRaspiUtilClass);
+
 
     const install = vscode.commands.registerCommand('spiberry.installSpiBerryEngine', async () => {
         const ssh = new NodeSSH();
