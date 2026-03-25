@@ -81,10 +81,6 @@ DEVICE_CONSTRUCTORS = {
     )),
 }
 
-# Additional parameter requirements: servo needs 6 params for full config
-DEVICE_PARAM_REQUIREMENTS = {
-    "servo": {"full_config": 6},
-}
 
 try:
     import spiberry.raspi_functions as raspi_functions
@@ -92,6 +88,7 @@ except ImportError:
     os.makedirs("raspi_functions", exist_ok=True)
     with open("raspi_functions/__init__.py", "w") as f:
         f.write("# Add your Raspberry Pi functions here\n")
+    import spiberry.raspi_functions as raspi_functions
 
 if args.vision:
     import app.vision as vision
@@ -596,7 +593,11 @@ class Controller:
                 return self._result_payload("error", code="error-vision_dispatch_failure", message=str(e))
 
         if root == "raspi_functions":
-            return self._dispatch_raspi_function_call(path, args_list, kwargs)
+            try:            
+                return self._dispatch_raspi_function_call(path, args_list, kwargs)
+            except Exception as e:
+                logger.error("Error processing raspi function call '%s': %s", func_call, e)
+                return self._result_payload("error", code="error-raspi_dispatch_failure", message=str(e))
 
         return self._result_payload("error", code="error-unknown_call_namespace", target=str(root))
 

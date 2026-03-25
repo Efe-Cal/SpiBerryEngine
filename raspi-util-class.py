@@ -111,7 +111,9 @@ def _call(expr):
 
 class Raspi:
     def register_device(self, device_type, device_name, *args, timeout=1):
-        print(f";devices.register({device_type}, {device_name}, {', '.join(args)});")
+        parts = [_lit(arg) for arg in args]
+        call_args = ", ".join(parts)
+        print(f";devices.register({device_type}, {device_name}, {call_args});")
         payload = _read_payload(sys.stdin.readline().strip())
 
         if payload.get("status") != "ok":
