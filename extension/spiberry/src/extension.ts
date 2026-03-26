@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
 import {
-    checkDeviceReachability,
+    checkDeviceReachabilityAndServiceStatus,
     createInteractiveSshTerminal,
     createSshConnection,
     sendFileToDevice,
@@ -18,10 +18,12 @@ let statusBarItem: vscode.StatusBarItem;
 
 class ControlPanelViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'spiberry.controlPanel';
+    private _view?: vscode.WebviewView;
 
     constructor(private readonly context: vscode.ExtensionContext) {}
 
     resolveWebviewView(webviewView: vscode.WebviewView): void {
+        this._view = webviewView;
         webviewView.webview.options = {
             enableScripts: true
         };
@@ -34,12 +36,38 @@ class ControlPanelViewProvider implements vscode.WebviewViewProvider {
             }
 
             if (message.command === 'spiberry.refreshStatus') {
-                await updateStatusBar(this.context);
-                void vscode.window.showInformationMessage('Device status refreshed.');
+                await this.updateStatus();
                 return;
             }
 
             void vscode.commands.executeCommand(message.command);
+        });
+
+        // Initial status update
+        this.updateStatus();
+    }
+
+    public async updateStatus(): Promise<void> {
+        if (!this._view) {
+            return;
+        }
+
+        const credentials = await this.context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            this._view.webview.postMessage({ type: 'status', data: { serviceStatus: 'unknown' } });
+            return;
+        }
+
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
+        const [isReachable, serviceStatus] = await checkDeviceReachabilityAndServiceStatus(sshConfig);
+        console.log(`Device ${sshConfig.host} reachable: ${isReachable}, service status: ${serviceStatus}`);
+        this._view.webview.postMessage({
+            type: 'status',
+            data: {
+                connected: isReachable,
+                host: sshConfig.host,
+                serviceStatus
+            }
         });
     }
 
@@ -81,11 +109,11 @@ async function updateStatusBar(context: vscode.ExtensionContext): Promise<void> 
     statusBarItem.text = `$(circle-large-outline) Checking ${sshConfig.host}...`;
     statusBarItem.show();
 
-    const isReachable = await checkDeviceReachability(sshConfig);
+    const [isReachable, serviceStatus] = await checkDeviceReachabilityAndServiceStatus(sshConfig);
     if (isReachable) {
         statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
         statusBarItem.color = new vscode.ThemeColor('debugIcon.startForeground');
-        statusBarItem.tooltip = 'Device is reachable';
+        statusBarItem.tooltip = `Device is reachable - Service: ${serviceStatus}`;
     } else {
         statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
         statusBarItem.color = new vscode.ThemeColor('errorForeground');
@@ -96,6 +124,10 @@ async function updateStatusBar(context: vscode.ExtensionContext): Promise<void> 
 function isRobotCodeFile(document: vscode.TextDocument): boolean {
     const code = document.getText();
     return /^import\s+(motor|motor_pair|hub|light_matrix|color)|from\s+hub\s+import/m.test(code);
+}
+
+function quoteForSingleQuotedShell(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -109,9 +141,11 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(statusBarItem);
 
     updateStatusBar(context);
+    void controlPanelProvider.updateStatus();
 
     const interval = setInterval(() => {
         void updateStatusBar(context);
+        void controlPanelProvider.updateStatus();
     }, 15000);
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
@@ -164,6 +198,7 @@ export function activate(context: vscode.ExtensionContext): void {
         await context.secrets.store('deviceCredentials', JSON.stringify(credentials));
         vscode.window.showInformationMessage('Device credentials saved successfully!');
         void updateStatusBar(context);
+        void controlPanelProvider.updateStatus();
     });
     context.subscriptions.push(connect);
 
@@ -197,6 +232,63 @@ export function activate(context: vscode.ExtensionContext): void {
     });
     context.subscriptions.push(sendCodeCommand);
 
+    const runServiceCommand = async (
+        action: 'enable' | 'disable' | 'start' | 'stop',
+        successMessage: string
+    ): Promise<void> => {
+        const credentials = await context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
+            void vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            return;
+        }
+
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
+        const escapedPassword = quoteForSingleQuotedShell(sshConfig.password);
+        const command = `echo ${escapedPassword} | sudo -S systemctl ${action} sbe.service`;
+
+        let sshConnection;
+        try {
+            sshConnection = await createSshConnection(sshConfig);
+            const result = await sshConnection.execCommand(command);
+
+            if (result.code !== 0) {
+                const stderrOutput = result.stderr.trim() || 'Unknown error';
+                vscode.window.showErrorMessage(`Failed to ${action} service: ${stderrOutput}`);
+                return;
+            }
+
+            vscode.window.showInformationMessage(successMessage);
+            void updateStatusBar(context);
+            void controlPanelProvider.updateStatus();
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to ${action} service: ${message}`);
+        } finally {
+            sshConnection?.dispose();
+        }
+    };
+
+    const enableServiceCommand = vscode.commands.registerCommand('spiberry.enableService', async () => {
+        await runServiceCommand('enable', 'Service enabled successfully.');
+    });
+    context.subscriptions.push(enableServiceCommand);
+
+    const disableServiceCommand = vscode.commands.registerCommand('spiberry.disableService', async () => {
+        await runServiceCommand('disable', 'Service disabled successfully.');
+    });
+    context.subscriptions.push(disableServiceCommand);
+
+    const startServiceCommand = vscode.commands.registerCommand('spiberry.startService', async () => {
+        await runServiceCommand('start', 'Service started successfully.');
+    });
+    context.subscriptions.push(startServiceCommand);
+
+    const stopServiceCommand = vscode.commands.registerCommand('spiberry.stopService', async () => {
+        await runServiceCommand('stop', 'Service stopped successfully.');
+    });
+    context.subscriptions.push(stopServiceCommand);
+
     const insertRaspiUtilClass = vscode.commands.registerCommand('spiberry.insertRaspiUtilClasses', async () => {
         const editor = vscode.window.activeTextEditor;
         if (!editor) {
@@ -212,11 +304,13 @@ export function activate(context: vscode.ExtensionContext): void {
 
         try {
             const utilClassContent = fs.readFileSync(utilClassPath, 'utf8').replace(/\r?\n$/, '');
-            const wrappedContent = ['', '# region spiberry: raspi util classes', utilClassContent, '# endregion', ''].join('\n');
+            const wrappedContent = ['# region spiberry: raspi util classes', utilClassContent, '# endregion', '','',''].join('\n');
 
             const inserted = await editor.edit((editBuilder) => {
-                editBuilder.insert(editor.selection.active, wrappedContent);
+                editBuilder.insert(new vscode.Position(0, 0), wrappedContent);
             });
+            editor.selection = new vscode.Selection(new vscode.Position(0, 0), new vscode.Position(0, 0));
+            vscode.commands.executeCommand('editor.fold');
 
             if (!inserted) {
                 vscode.window.showErrorMessage('Failed to insert raspi util class content.');
@@ -373,6 +467,45 @@ export function activate(context: vscode.ExtensionContext): void {
         }
     });
     context.subscriptions.push(dumpTypings);
+
+    const openTerminalCommand = vscode.commands.registerCommand('spiberry.openSshConsole', async () => {
+        const credentials = await context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
+            void vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            return;
+        }
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
+        try {
+            const sshConnection = await createSshConnection(sshConfig);
+            await createInteractiveSshTerminal(sshConnection, null, `ssh: ${sshConfig.host}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to open SSH console: ${message}`);
+        }
+    });
+
+    context.subscriptions.push(openTerminalCommand);
+
+    const followJournalCommand = vscode.commands.registerCommand('spiberry.followServiceJournal', async () => {
+        const credentials = await context.secrets.get('deviceCredentials');
+        if (!credentials) {
+            vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
+            void vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            return;
+        }
+
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
+        try {
+            const sshConnection = await createSshConnection(sshConfig);
+            await createInteractiveSshTerminal(sshConnection, 'journalctl -fu sbe -o cat', `journal: ${sshConfig.host}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to open journal stream: ${message}`);
+        }
+    });
+
+    context.subscriptions.push(followJournalCommand);
 }
 
 export function deactivate(): void {}
