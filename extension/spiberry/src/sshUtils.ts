@@ -17,7 +17,20 @@ export async function checkDeviceReachabilityAndServiceStatus(sshConfig: DeviceS
         });
         const serviceStatus = await ssh.execCommand('systemctl is-active sbe.service');
 
-        return [true, serviceStatus.stdout.trim()];
+        const stdout = serviceStatus.stdout ? serviceStatus.stdout.trim() : '';
+        const stderr = (serviceStatus as { stderr?: string }).stderr ? (serviceStatus as { stderr?: string }).stderr!.trim() : '';
+
+        if (typeof serviceStatus.code === 'number' && serviceStatus.code !== 0) {
+            // Command failed; device is reachable but service status could not be determined reliably.
+            return [true, stderr || 'unknown'];
+        }
+
+        if (!stdout) {
+            // No usable stdout; fall back to stderr message if available, otherwise 'unknown'.
+            return [true, stderr || 'unknown'];
+        }
+
+        return [true, stdout];
     } catch {
         return [false, 'unknown'];
     } finally {

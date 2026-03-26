@@ -52,6 +52,10 @@
       {
         "command": "spiberry.followServiceJournal",
         "title": "Spiberry: Follow Service Journal"
+      },
+      {
+        "command": "spiberry.openSshConsole",
+        "title": "Spiberry: Open SSH Console"
       }
     ],
     "configuration": {

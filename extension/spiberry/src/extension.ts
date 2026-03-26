@@ -143,9 +143,14 @@ export function activate(context: vscode.ExtensionContext): void {
     updateStatusBar(context);
     void controlPanelProvider.updateStatus();
 
+    let callStatusBarNext = true;
     const interval = setInterval(() => {
-        void updateStatusBar(context);
-        void controlPanelProvider.updateStatus();
+        if (callStatusBarNext) {
+            void updateStatusBar(context);
+        } else {
+            void controlPanelProvider.updateStatus();
+        }
+        callStatusBarNext = !callStatusBarNext;
     }, 15000);
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
@@ -310,7 +315,7 @@ export function activate(context: vscode.ExtensionContext): void {
                 editBuilder.insert(new vscode.Position(0, 0), wrappedContent);
             });
             editor.selection = new vscode.Selection(new vscode.Position(0, 0), new vscode.Position(0, 0));
-            vscode.commands.executeCommand('editor.fold');
+            void vscode.commands.executeCommand('editor.fold');
 
             if (!inserted) {
                 vscode.window.showErrorMessage('Failed to insert raspi util class content.');
