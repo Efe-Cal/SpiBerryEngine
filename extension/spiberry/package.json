@@ -2,7 +2,7 @@
   "name": "spiberry",
   "displayName": "spiberry",
   "description": "",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.110.0"
   },
@@ -32,6 +32,30 @@
       {
         "command": "spiberry.insertRaspiUtilClasses",
         "title": "Spiberry: Insert Raspi Util Classes"
+      },
+      {
+        "command": "spiberry.enableService",
+        "title": "Spiberry: Enable Service"
+      },
+      {
+        "command": "spiberry.disableService",
+        "title": "Spiberry: Disable Service"
+      },
+      {
+        "command": "spiberry.startService",
+        "title": "Spiberry: Start Service"
+      },
+      {
+        "command": "spiberry.stopService",
+        "title": "Spiberry: Stop Service"
+      },
+      {
+        "command": "spiberry.followServiceJournal",
+        "title": "Spiberry: Follow Service Journal"
+      },
+      {
+        "command": "spiberry.openSshConsole",
+        "title": "Spiberry: Open SSH Console"
       }
     ],
     "configuration": {
@@ -44,6 +68,24 @@
           "description": "Automatically send code to the device when a file is saved."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "spiberrySidebar",
+          "title": "SpiBerry",
+          "icon": "resources/spiberry.svg"
+        }
+      ]
+    },
+    "views": {
+      "spiberrySidebar": [
+        {
+          "id": "spiberry.controlPanel",
+          "name": "Control Panel",
+          "type": "webview"
+        }
+      ]
     }
   },
   "scripts": {

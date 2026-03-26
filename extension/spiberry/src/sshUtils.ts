@@ -8,16 +8,31 @@ export interface DeviceSshConfig {
     password: string;
 }
 
-export async function checkDeviceReachability(sshConfig: DeviceSshConfig): Promise<boolean> {
+export async function checkDeviceReachabilityAndServiceStatus(sshConfig: DeviceSshConfig): Promise<[boolean, string]> {
     const ssh = new NodeSSH();
     try {
         await ssh.connect({
             ...sshConfig,
             readyTimeout: 5000
         });
-        return true;
+        const serviceStatus = await ssh.execCommand('systemctl is-active sbe.service');
+
+        const stdout = serviceStatus.stdout ? serviceStatus.stdout.trim() : '';
+        const stderr = (serviceStatus as { stderr?: string }).stderr ? (serviceStatus as { stderr?: string }).stderr!.trim() : '';
+
+        if (typeof serviceStatus.code === 'number' && serviceStatus.code !== 0) {
+            // Command failed; device is reachable but service status could not be determined reliably.
+            return [true, stderr || 'unknown'];
+        }
+
+        if (!stdout) {
+            // No usable stdout; fall back to stderr message if available, otherwise 'unknown'.
+            return [true, stderr || 'unknown'];
+        }
+
+        return [true, stdout];
     } catch {
-        return false;
+        return [false, 'unknown'];
     } finally {
         ssh.dispose();
     }
