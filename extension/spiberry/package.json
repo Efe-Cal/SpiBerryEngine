@@ -44,6 +44,24 @@
           "description": "Automatically send code to the device when a file is saved."
         }
       }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "spiberrySidebar",
+          "title": "SpiBerry",
+          "icon": "resources/spiberry.svg"
+        }
+      ]
+    },
+    "views": {
+      "spiberrySidebar": [
+        {
+          "id": "spiberry.controlPanel",
+          "name": "Control Panel",
+          "type": "webview"
+        }
+      ]
     }
   },
   "scripts": {

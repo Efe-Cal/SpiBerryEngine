@@ -10,10 +10,49 @@ import {
     uploadFileOverSsh,
     type DeviceSshConfig
 } from './sshUtils';
+import { getControlPanelHtml } from './controlPanelHtml';
 
 const RELEASE_URL = 'https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz';
 
 let statusBarItem: vscode.StatusBarItem;
+
+class ControlPanelViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewType = 'spiberry.controlPanel';
+
+    constructor(private readonly context: vscode.ExtensionContext) {}
+
+    resolveWebviewView(webviewView: vscode.WebviewView): void {
+        webviewView.webview.options = {
+            enableScripts: true
+        };
+
+        webviewView.webview.html = getControlPanelHtml(webviewView.webview, this.getNonce());
+
+        webviewView.webview.onDidReceiveMessage(async (message: { command?: string }) => {
+            if (!message.command) {
+                return;
+            }
+
+            if (message.command === 'spiberry.refreshStatus') {
+                await updateStatusBar(this.context);
+                void vscode.window.showInformationMessage('Device status refreshed.');
+                return;
+            }
+
+            void vscode.commands.executeCommand(message.command);
+        });
+    }
+
+    private getNonce(): string {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+        let result = '';
+        for (let i = 0; i < 32; i += 1) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+
+        return result;
+    }
+}
 
 async function updateStatusBar(context: vscode.ExtensionContext): Promise<void> {
     let credentials: string | undefined;
@@ -61,6 +100,9 @@ function isRobotCodeFile(document: vscode.TextDocument): boolean {
 
 export function activate(context: vscode.ExtensionContext): void {
     console.log('Congratulations, your extension "spiberry" is now active!');
+
+    const controlPanelProvider = new ControlPanelViewProvider(context);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(ControlPanelViewProvider.viewType, controlPanelProvider));
 
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
     statusBarItem.command = 'spiberry.setDeviceCredentials';
