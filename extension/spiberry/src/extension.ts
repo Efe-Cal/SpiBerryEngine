@@ -1,31 +1,22 @@
 import * as vscode from 'vscode';
-import { NodeSSH } from 'node-ssh';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
+import {
+    checkDeviceReachability,
+    createInteractiveSshTerminal,
+    createSshConnection,
+    sendFileToDevice,
+    uploadFileOverSsh,
+    type DeviceSshConfig
+} from './sshUtils';
 
-const RELEASE_URL = "https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz";
+const RELEASE_URL = 'https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz';
 
 let statusBarItem: vscode.StatusBarItem;
 
-async function checkDeviceReachability(sshConfig: any): Promise<boolean> {
-    const ssh = new NodeSSH();
-    try {
-        await ssh.connect({
-            ...sshConfig,
-            readyTimeout: 5000,
-            connTimeout: 5000
-        });
-        return true;
-    } catch (error) {
-        return false;
-    } finally {
-        ssh.dispose();
-    }
-}
-
-async function updateStatusBar(context: vscode.ExtensionContext) {
-    let credentials;
+async function updateStatusBar(context: vscode.ExtensionContext): Promise<void> {
+    let credentials: string | undefined;
     try {
         credentials = await context.secrets.get('deviceCredentials');
     } catch (error) {
@@ -39,9 +30,9 @@ async function updateStatusBar(context: vscode.ExtensionContext) {
         return;
     }
 
-    let sshConfig;
+    let sshConfig: DeviceSshConfig;
     try {
-        sshConfig = JSON.parse(credentials);
+        sshConfig = JSON.parse(credentials) as DeviceSshConfig;
     } catch (error) {
         console.error('Error parsing credentials:', error);
         statusBarItem.hide();
@@ -54,88 +45,13 @@ async function updateStatusBar(context: vscode.ExtensionContext) {
     const isReachable = await checkDeviceReachability(sshConfig);
     if (isReachable) {
         statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
-        statusBarItem.color = new vscode.ThemeColor('debugIcon.startForeground'); // Green-ish
+        statusBarItem.color = new vscode.ThemeColor('debugIcon.startForeground');
         statusBarItem.tooltip = 'Device is reachable';
     } else {
         statusBarItem.text = `$(circle-filled) ${sshConfig.host}`;
-        statusBarItem.color = new vscode.ThemeColor('errorForeground'); // Red
+        statusBarItem.color = new vscode.ThemeColor('errorForeground');
         statusBarItem.tooltip = 'Device is unreachable';
     }
-}
-
-async function sendFileToDevice(localFilePath: string, remoteFilePath: string, sshConfig: { host: string; username: string; password: string }) {
-    const ssh = new NodeSSH();
-    await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: "Sending file to remote device...",
-        cancellable: false
-    }, async (progress) => {
-        try {
-            await ssh.connect(sshConfig);
-            await ssh.putFile(localFilePath, remoteFilePath);
-            vscode.window.showInformationMessage(`Successfully sent ${path.basename(localFilePath)} to remote device!`);
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to send file: ${error.message}`);
-        } finally {
-            ssh.dispose(); // Always close the connection
-        }
-    });
-}
-
-async function createInteractiveSshTerminal(sshConnection: NodeSSH, initCommand: string | null = null) {
-    // 1. Request the shell from your existing node-ssh instance
-    // You can pass terminal options like 'xterm-256color'
-    const shellStream = await sshConnection.requestShell({ term: 'xterm-256color' });
-    if (initCommand) {
-        shellStream.write(`${initCommand}\r\n`);
-    }
-    
-
-    const writeEmitter = new vscode.EventEmitter<string>();
-
-    const pty: vscode.Pseudoterminal = {
-        onDidWrite: writeEmitter.event,
-        
-        // Fired when the terminal is opened in the UI
-        open: () => {
-            shellStream.on('data', (data: Buffer) => {
-                writeEmitter.fire(data.toString());
-            });
-
-            shellStream.on('close', () => {
-                writeEmitter.fire('\r\nConnection closed by remote host.\r\n');
-            });
-
-            shellStream.on('error', (err: any) => {
-                const message = err && err.message ? err.message : String(err);
-                writeEmitter.fire(`\r\nSSH shell error: ${message}\r\n`);
-                shellStream.end();
-                sshConnection.dispose();
-            });
-        },
-
-        // Fired when the user types in the terminal
-        handleInput: (data: string) => {
-            shellStream.write(data);
-        },
-
-        // IMPORTANT: Tells the remote SSH server the terminal size
-        setDimensions: (dimensions: vscode.TerminalDimensions) => {
-            shellStream.setWindow(dimensions.rows, dimensions.columns, 0, 0);
-        },
-
-        close: () => {
-            shellStream.end();
-            sshConnection.dispose();
-        }
-    };
-
-    const terminal = vscode.window.createTerminal({
-        name: "SpiBerry installation",
-        pty: pty
-    });
-
-    terminal.show();
 }
 
 function isRobotCodeFile(document: vscode.TextDocument): boolean {
@@ -143,19 +59,18 @@ function isRobotCodeFile(document: vscode.TextDocument): boolean {
     return /^import\s+(motor|motor_pair|hub|light_matrix|color)|from\s+hub\s+import/m.test(code);
 }
 
-export function activate(context: vscode.ExtensionContext) {
-
-	console.log('Congratulations, your extension "spiberry" is now active!');
+export function activate(context: vscode.ExtensionContext): void {
+    console.log('Congratulations, your extension "spiberry" is now active!');
 
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
     statusBarItem.command = 'spiberry.setDeviceCredentials';
     context.subscriptions.push(statusBarItem);
 
-    // Initial check
     updateStatusBar(context);
 
-    // Periodic check every 15 seconds
-    const interval = setInterval(() => updateStatusBar(context), 15000);
+    const interval = setInterval(() => {
+        void updateStatusBar(context);
+    }, 15000);
     context.subscriptions.push({ dispose: () => clearInterval(interval) });
 
     const saveListener = vscode.workspace.onDidSaveTextDocument((document) => {
@@ -165,21 +80,19 @@ export function activate(context: vscode.ExtensionContext) {
         }
         const editor = vscode.window.activeTextEditor;
         if (editor && editor.document === document) {
-            vscode.commands.executeCommand('spiberry.sendCodeToDevice');
+            void vscode.commands.executeCommand('spiberry.sendCodeToDevice');
         }
     });
     context.subscriptions.push(saveListener);
 
-
-	const connect = vscode.commands.registerCommand('spiberry.setDeviceCredentials', async () => {
-
+    const connect = vscode.commands.registerCommand('spiberry.setDeviceCredentials', async () => {
         const credentials: { host?: string; username?: string; password?: string } = {};
 
-		const host = await vscode.window.showInputBox({
-			prompt: 'Enter the IP address or hostname of the device to connect to',
-			placeHolder: 'e.g., 192.168.1.2 or raspberrypi',
-            validateInput: (value) => value.trim() === '' ? 'Hostname is required' : null
-		});
+        const host = await vscode.window.showInputBox({
+            prompt: 'Enter the IP address or hostname of the device to connect to',
+            placeHolder: 'e.g., 192.168.1.2 or raspberrypi',
+            validateInput: (value) => (value.trim() === '' ? 'Hostname is required' : null)
+        });
         if (!host) {
             return;
         }
@@ -188,7 +101,7 @@ export function activate(context: vscode.ExtensionContext) {
         const username = await vscode.window.showInputBox({
             prompt: 'Enter the username for the device',
             placeHolder: 'e.g., pi',
-            validateInput: (value) => value.trim() === '' ? 'Username is required' : null
+            validateInput: (value) => (value.trim() === '' ? 'Username is required' : null)
         });
         if (!username) {
             return;
@@ -199,26 +112,21 @@ export function activate(context: vscode.ExtensionContext) {
             prompt: 'Enter the password for the device',
             placeHolder: 'e.g., your_password',
             password: true,
-            validateInput: (value) => value.trim() === '' ? 'Password is required' : null
+            validateInput: (value) => (value.trim() === '' ? 'Password is required' : null)
         });
         if (!password) {
             return;
         }
         credentials.password = password;
 
-        // Here you can store the credentials in a secure way
-        await context.secrets.store('deviceCredentials', JSON.stringify(credentials)).then(() => {
-            vscode.window.showInformationMessage('Device credentials saved successfully!');
-            updateStatusBar(context);
-        });
+        await context.secrets.store('deviceCredentials', JSON.stringify(credentials));
+        vscode.window.showInformationMessage('Device credentials saved successfully!');
+        void updateStatusBar(context);
+    });
+    context.subscriptions.push(connect);
 
-	});
-
-	context.subscriptions.push(connect);
-
-	const sendCodeCommand = vscode.commands.registerCommand('spiberry.sendCodeToDevice', async () => {
-
-		const editor = vscode.window.activeTextEditor;
+    const sendCodeCommand = vscode.commands.registerCommand('spiberry.sendCodeToDevice', async () => {
+        const editor = vscode.window.activeTextEditor;
         if (!editor) {
             vscode.window.showErrorMessage('No active file to send.');
             return;
@@ -226,25 +134,26 @@ export function activate(context: vscode.ExtensionContext) {
 
         const localFilePath = editor.document.uri.fsPath;
         const fileName = path.basename(localFilePath);
-        
+
         const credentials = await context.secrets.get('deviceCredentials');
         if (!credentials) {
             vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
-            vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            void vscode.commands.executeCommand('spiberry.setDeviceCredentials');
             return;
         }
-        const sshConfig = JSON.parse(credentials);
+
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
 
         vscode.window.showInformationMessage('Sending code to device...');
 
         const username = sshConfig.username || 'pi';
         const remoteDirectory = `/home/${username}/spiberry`;
-        const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : "raspi_functions/"+fileName;
+        const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : `raspi_functions/${fileName}`;
         const remoteFilePath = `${remoteDirectory}/${remoteFileName}`;
-        await sendFileToDevice(localFilePath, remoteFilePath, sshConfig);
-	});
 
-	context.subscriptions.push(sendCodeCommand);
+        await sendFileToDevice(localFilePath, remoteFilePath, sshConfig);
+    });
+    context.subscriptions.push(sendCodeCommand);
 
     const insertRaspiUtilClass = vscode.commands.registerCommand('spiberry.insertRaspiUtilClasses', async () => {
         const editor = vscode.window.activeTextEditor;
@@ -261,13 +170,7 @@ export function activate(context: vscode.ExtensionContext) {
 
         try {
             const utilClassContent = fs.readFileSync(utilClassPath, 'utf8').replace(/\r?\n$/, '');
-            const wrappedContent = [
-                '',
-                '# region spiberry: raspi util classes',
-                utilClassContent,
-                '# endregion',
-                '',
-            ].join('\n');
+            const wrappedContent = ['', '# region spiberry: raspi util classes', utilClassContent, '# endregion', ''].join('\n');
 
             const inserted = await editor.edit((editBuilder) => {
                 editBuilder.insert(editor.selection.active, wrappedContent);
@@ -278,94 +181,93 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            // Move cursor to the end of the newly inserted content
-            const endPosition = editor.selection.active;
-            
             vscode.window.showInformationMessage('Inserted raspi util class with region folding markers.');
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to read or insert raspi util class: ${error.message}`);
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to read or insert raspi util class: ${message}`);
         }
     });
-
     context.subscriptions.push(insertRaspiUtilClass);
 
-
     const install = vscode.commands.registerCommand('spiberry.installSpiBerryEngine', async () => {
-        const ssh = new NodeSSH();
-        
         const credentials = await context.secrets.get('deviceCredentials');
         if (!credentials) {
             vscode.window.showErrorMessage('Device credentials not set. Please set them first using the status bar item.');
-            vscode.commands.executeCommand('spiberry.setDeviceCredentials');
+            void vscode.commands.executeCommand('spiberry.setDeviceCredentials');
             return;
         }
 
         vscode.window.showInformationMessage('Installing SpiBerry Engine on device...');
-        const sshConfig = JSON.parse(credentials);
+        const sshConfig = JSON.parse(credentials) as DeviceSshConfig;
 
-        // Download file to extension's directory first
         const localFilePath = path.join(context.extensionPath, 'spiberry.pyz');
-        
-        try {
-            // Download the file locally using Node.js https
-            await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'Downloading SpiBerry Engine...',
-                cancellable: false
-            }, async () => {
-                return new Promise<void>((resolve, reject) => {
-                    const downloadFile = (url: string) => {
-                        https.get(url, (response) => {
-                            if (response.statusCode === 301 || response.statusCode === 302) {
-                                // Handle redirect
-                                downloadFile(response.headers.location!);
-                                return;
-                            }
-                            
-                            if (response.statusCode !== 200) {
-                                reject(new Error(`Failed to download: Status Code ${response.statusCode}`));
-                                return;
-                            }
+        let sshConnection;
 
-                            const file = fs.createWriteStream(localFilePath);
-                            response.pipe(file);
-                            file.on('finish', () => {
-                                file.close();
-                                resolve();
-                            });
-                            file.on('error', (err) => {
-                                fs.unlink(localFilePath, () => {});
-                                reject(err);
-                            });
-                        }).on('error', (err) => {
-                            fs.unlink(localFilePath, () => {});
-                            reject(err);
-                        });
-                    };
-                    downloadFile(RELEASE_URL);
-                });
-            });
+        try {
+            await vscode.window.withProgress(
+                {
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'Downloading SpiBerry Engine...',
+                    cancellable: false
+                },
+                async () =>
+                    new Promise<void>((resolve, reject) => {
+                        const downloadFile = (url: string) => {
+                            https
+                                .get(url, (response) => {
+                                    if (response.statusCode === 301 || response.statusCode === 302) {
+                                        downloadFile(response.headers.location!);
+                                        return;
+                                    }
+
+                                    if (response.statusCode !== 200) {
+                                        reject(new Error(`Failed to download: Status Code ${response.statusCode}`));
+                                        return;
+                                    }
+
+                                    const file = fs.createWriteStream(localFilePath);
+                                    response.pipe(file);
+                                    file.on('finish', () => {
+                                        file.close();
+                                        resolve();
+                                    });
+                                    file.on('error', (err) => {
+                                        fs.unlink(localFilePath, () => {
+                                            // noop
+                                        });
+                                        reject(err);
+                                    });
+                                })
+                                .on('error', (err) => {
+                                    fs.unlink(localFilePath, () => {
+                                        // noop
+                                    });
+                                    reject(err);
+                                });
+                        };
+
+                        downloadFile(RELEASE_URL);
+                    })
+            );
 
             vscode.window.showInformationMessage('SpiBerry Engine downloaded locally. Uploading to device...');
-            
-            // Upload to device
-            await ssh.connect(sshConfig);
-            await ssh.putFile(localFilePath, '/home/' + sshConfig.username + '/spiberry.pyz');
-            
+
+            sshConnection = await createSshConnection(sshConfig);
+            await uploadFileOverSsh(sshConnection, localFilePath, `/home/${sshConfig.username}/spiberry.pyz`);
+
             vscode.window.showInformationMessage('SpiBerry Engine uploaded successfully on the device!');
-            createInteractiveSshTerminal(ssh, "sudo python ~/spiberry.pyz\r\n"+sshConfig.password + "\r\n");
-        } catch (error: any) {
-            vscode.window.showErrorMessage(`Failed to install SpiBerry Engine: ${error.message}`);
-            ssh.dispose();
+            await createInteractiveSshTerminal(sshConnection, `sudo python ~/spiberry.pyz\r\n${sshConfig.password}\r\n`, 'SpiBerry Installation');
+        } catch (error: unknown) {
+            const message = error instanceof Error ? error.message : String(error);
+            vscode.window.showErrorMessage(`Failed to install SpiBerry Engine: ${message}`);
+            if (sshConnection) {
+                sshConnection.dispose();
+            }
         }
-
     });
-
     context.subscriptions.push(install);
 
     const dumpTypings = vscode.commands.registerCommand('spiberry.installTypings', async () => {
-        
-        // Ask user whether to install to workspace or global
         const choice = await vscode.window.showQuickPick(
             [
                 { label: 'Workspace', description: 'Install typings for current workspace only' },
@@ -378,28 +280,23 @@ export function activate(context: vscode.ExtensionContext) {
         );
 
         if (!choice) {
-            return; // User cancelled
+            return;
         }
 
         const isGlobal = choice.label === 'Global';
         const workspaceFolders = vscode.workspace.workspaceFolders;
 
-        // For workspace install, we need a workspace folder
         if (!isGlobal && !workspaceFolders) {
             vscode.window.showErrorMessage('No workspace folder open. Use Global install instead.');
             return;
         }
 
-        // Use extensionContext.extensionPath to find the source typings
         const sourceDir = path.join(context.extensionPath, 'typings');
 
-        // Get the target directory and stubPath based on installation type
         let targetDir: string;
         let stubPath: string;
 
         if (isGlobal) {
-            // For global installation, use VS Code's global storage path
-            // We'll use the extension's globalStoragePath instead of workspace
             const globalStorageDir = context.globalStorageUri.fsPath;
             targetDir = path.join(globalStorageDir, 'typings');
             stubPath = targetDir;
@@ -422,26 +319,18 @@ export function activate(context: vscode.ExtensionContext) {
                 fs.copyFileSync(srcPath, destPath);
             }
 
-            // Determine configuration target
-            const configTarget = isGlobal
-                ? vscode.ConfigurationTarget.Global
-                : vscode.ConfigurationTarget.Workspace;
+            const configTarget = isGlobal ? vscode.ConfigurationTarget.Global : vscode.ConfigurationTarget.Workspace;
 
-            await vscode.workspace.getConfiguration('python.analysis').update(
-                'stubPath',
-                stubPath,
-                configTarget
-            );
+            await vscode.workspace.getConfiguration('python.analysis').update('stubPath', stubPath, configTarget);
 
             const location = isGlobal ? 'globally' : 'to .vscode/typings';
             vscode.window.showInformationMessage(`Successfully dumped SpiBerry typings ${location}`);
-        } catch (err: any) {
-            vscode.window.showErrorMessage(`Failed to dump typings: ${err.message}`);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+            vscode.window.showErrorMessage(`Failed to dump typings: ${message}`);
         }
     });
-
     context.subscriptions.push(dumpTypings);
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate(): void {}
