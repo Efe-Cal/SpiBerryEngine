@@ -60,7 +60,7 @@
     ],
     "configuration": {
       "type": "object",
-      "title": "Spiberry Configuration",
+      "title": "Spiberry",
       "properties": {
         "spiberry.autoSendOnSave": {
           "type": "boolean",
