@@ -1,3 +1,4 @@
+# Deprecated: See the VS Code Extension for easier code deployment. This script is still supported but the extension provides a more user-friendly interface.
 import sys
 import zipfile
 import tempfile
