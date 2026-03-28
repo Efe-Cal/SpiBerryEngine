@@ -2,6 +2,7 @@
   "name": "spiberry",
   "displayName": "spiberry",
   "description": "",
+  "icon": "resources/spiberry-logo.png",
   "version": "0.0.2",
   "engines": {
     "vscode": "^1.110.0"

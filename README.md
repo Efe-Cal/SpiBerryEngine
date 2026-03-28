@@ -6,6 +6,8 @@ I believe it can also be used with other micropython devices.
 
 Note: See [the VS Code Extension](extension/spiberry/README.md) for easier installation and code deployment. The methods described in this README are still supported but the extension provides a more user-friendly interface.
 
+See [this Youtube video](https://youtu.be/eZQZYIM7QZc) for an introduction and demonstration of the project.
+
 ## Installation
 
 ### Installing the Engine
