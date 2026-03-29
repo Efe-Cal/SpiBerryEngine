@@ -43,6 +43,59 @@ Alternatively, you can use `--set-pins` to interactively configure pins during o
 python spiberry.pyz --set-pins
 ```
 
+### Configuration File
+
+SpiBerryEngine stores runtime settings in:
+
+```text
+~/spiberry_config.ini
+```
+
+On first run, this file is created automatically with defaults similar to:
+
+```ini
+[GPIO]
+red = 0
+green = 11
+blue = 9
+button = 17
+active_high = False
+
+[Code]
+path = robot_code.py
+raspi_functions_path = raspi_functions/
+
+[Vision]
+enabled = False
+
+[Camera]
+take_picture_method = picamera2
+timeout = 0
+width = 1920
+height = 1080
+
+[RemoteDrive]
+left_motor = port.A
+right_motor = port.B
+```
+
+Notes:
+
+- `Code.path` controls which robot code file is executed.
+- `Code.raspi_functions_path` can point to either:
+  - a Python file (for example `raspi_functions.py`), or
+  - a package directory (for example `raspi_functions/`, using `__init__.py`).
+- Vision features are only loaded when `Vision.enabled = True`.
+- `RemoteDrive.left_motor` and `RemoteDrive.right_motor` set default motor ports for remote drive mode.
+
+CLI GPIO pin arguments are now persisted into the config file when provided:
+
+```bash
+python spiberry.pyz --red 0 --green 11 --blue 9 --button 17
+```
+
+The values are then saved under `[GPIO]`.
+
 ### Deploying Code
 
 Use [deploy_robot_code.py](deploy_robot_code.py) to deploy your robot code:

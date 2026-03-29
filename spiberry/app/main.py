@@ -108,10 +108,6 @@ def _parse_pin_overrides(argv):
         if pin_value is None:
             continue
 
-        if pin_value < 0 or pin_value > 27:
-            logger.warning("Ignoring out-of-range pin value '%s' for --%s.", pin_value, config_key)
-            continue
-
         overrides[config_key] = str(pin_value)
 
     return overrides
