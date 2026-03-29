@@ -515,8 +515,11 @@ def main():
             install_extra(python, extra_libs)
 
     if len(sys.argv) > 1 and sys.argv[1] == "--set-pins":
-        pin_args = interactive_pin_menu()
-        pin_args = [sys.argv[0]] + [f"{k} {v}" for k, v in pin_args.items()] + sys.argv[1:]
+        selected_pins = interactive_pin_menu()
+        pin_args = [arg for arg in sys.argv[1:] if arg != "--set-pins"]
+        if selected_pins:
+            for key, value in selected_pins.items():
+                pin_args.extend([key, str(value)])
     
     fix_permissions(work_dir)
     # Make scripts executable
