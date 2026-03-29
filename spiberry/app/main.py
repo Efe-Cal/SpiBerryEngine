@@ -44,7 +44,7 @@ def print_log(self, message, *args, **kwargs):
 logging.Logger.print = print_log
 
 starter_pin = Button(21, pull_up=True)
-if not starter_pin.is_pressed or os.getenv("IGNORE_STARTER_PIN","0") == "0":
+if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
     logger.critical("Starter pin not connected to ground. Please connect pin 21 to ground to start the program.")
     sys.exit(1)
 
@@ -52,10 +52,10 @@ CONFIG_PATH = Path.home() / "spiberry_config.ini"
 if not CONFIG_PATH.exists():
     config = configparser.ConfigParser()
     config["GPIO"] = {
-        "red": "17",
-        "green": "0",
-        "blue": "11",
-        "button": "9",
+        "red": "0",
+        "green": "11",
+        "blue": "9",
+        "button": "17",
         "active_high": "False"
     }
     config["Code"] = {
@@ -64,12 +64,12 @@ if not CONFIG_PATH.exists():
     }
     config["Vision"] = {
         "enabled": "False",
-        "Camera": {
-            "take_picture_method": "picamera2",
-            "timeout": "0",
-            "width": "1920",
-            "height": "1080",
-        },
+    }
+    config["Camera"] = {
+        "take_picture_method": "picamera2",
+        "timeout": "0",
+        "width": "1920",
+        "height": "1080",
     }
     config["RemoteDrive"] = {
         "left_motor":"port.A",
@@ -444,7 +444,7 @@ class Controller:
         try:
             camera = vision.Camera(take_picture_method=take_picture_method, camera_config=camera_config)
             vision_model = vision.Vision(model_path=model_path, camera=camera)
-            contour = vision.ContourDetector(config_path=config.get("Vision", "vision_config_path"), camera=camera)
+            contour = vision.ContourDetector(config_path=config.get("Vision", "vision_config_path", fallback=None), camera=camera)
         except Exception as e:
             logger.error("Vision initialization failed: %s", e)
             return self._result_payload("error", code="error-vision_initialize_failed", message=str(e))
@@ -589,8 +589,8 @@ class Controller:
             return self._result_payload("ok", action="ContourDetector.extend_all_color_ranges", color_ranges=extended)
 
         if method == "load_config":
-            config = self.vision_contour.load_config()
-            self.vision_contour.config = config
+            vis_config = self.vision_contour.load_config(config_path=config.get("Vision", "vision_config_path", fallback=None))
+            self.vision_contour.config = vis_config
             return self._result_payload("ok", action="ContourDetector.load_config")
 
         return self._result_payload("error", code="error-unknown_vision_method", target=f"ContourDetector.{method}")

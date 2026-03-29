@@ -75,17 +75,21 @@ class Camera:
             except ValueError:
                 pass
 
-        # Support explicit camera sections for larger/clearer configurations.
-        for section in ("Camera", "Vision.Camera"):
-            if config.has_section(section):
-                for key, value in config.items(section):
-                    merged[key] = value
+        # Backward compatible: [Vision.Camera] section.
+        if config.has_section("Vision.Camera"):
+            for key, value in config.items("Vision.Camera"):
+                merged[key] = value
 
-        # Also allow [Vision] camera_* keys (e.g. camera_timeout = 1000)
+        # Backward compatible: [Vision] camera_* keys.
         if config.has_section("Vision"):
             for key, value in config.items("Vision"):
                 if key.startswith("camera_"):
                     merged[key.removeprefix("camera_")] = value
+
+        # Canonical section: [Camera] overrides legacy camera keys.
+        if config.has_section("Camera"):
+            for key, value in config.items("Camera"):
+                merged[key] = value
 
         return merged
 
