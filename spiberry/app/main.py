@@ -63,7 +63,17 @@ if not CONFIG_PATH.exists():
         "raspi_functions_path": "raspi_functions/",
     }
     config["Vision"] = {
-        "enabled": "False"
+        "enabled": "False",
+        "Camera": {
+            "take_picture_method": "picamera2",
+            "timeout": "0",
+            "width": "1920",
+            "height": "1080",
+        },
+    }
+    config["RemoteDrive"] = {
+        "left_motor":"port.A",
+        "right_motor":"port.B",
     }
 
     with open(CONFIG_PATH, "w") as f:
@@ -434,7 +444,7 @@ class Controller:
         try:
             camera = vision.Camera(take_picture_method=take_picture_method, camera_config=camera_config)
             vision_model = vision.Vision(model_path=model_path, camera=camera)
-            contour = vision.ContourDetector(camera=camera)
+            contour = vision.ContourDetector(config_path=config.get("Vision", "vision_config_path"), camera=camera)
         except Exception as e:
             logger.error("Vision initialization failed: %s", e)
             return self._result_payload("error", code="error-vision_initialize_failed", message=str(e))
