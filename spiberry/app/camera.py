@@ -1,3 +1,7 @@
+import ast
+import configparser
+import json
+from pathlib import Path
 import subprocess
 from typing import Literal
 
@@ -19,17 +23,114 @@ class Camera:
                           For picamera2: Can be a full config dict or controls dict
                           For rpicam-still: Dict of command-line options (e.g., {"width": 1920, "height": 1080, "shutter": 10000})
         """
+        if camera_config is None:
+            camera_config = self._load_engine_camera_config()
+
+        self.camera_config = self._normalize_camera_config(camera_config)
+        config_method = self.camera_config.pop("take_picture_method", None)
+        if config_method and take_picture_method == "picamera2":
+            take_picture_method = config_method
         self.take_picture_method = take_picture_method
-        self.camera_config = camera_config or {}
         self._is_started = False
         
         if self.take_picture_method == "picamera2":
             self.picam2 = Picamera2()
             self._configure_picamera2()
         elif self.take_picture_method == "rpicam-still":
-            # Validate rpicam-still config is dict-based
-            if camera_config and not isinstance(camera_config, dict):
-                raise ValueError("camera_config for rpicam-still must be a dictionary of command-line options")
+            pass
+        else:
+            raise ValueError(f"Unsupported take_picture_method: {self.take_picture_method}")
+
+    @staticmethod
+    def _coerce_scalar_value(value):
+        if isinstance(value, str):
+            text = value.strip()
+            lowered = text.lower()
+            if lowered == "true":
+                return True
+            if lowered == "false":
+                return False
+            try:
+                return int(text)
+            except ValueError:
+                pass
+            try:
+                return float(text)
+            except ValueError:
+                return text
+        return value
+
+    @classmethod
+    def _load_engine_camera_config(cls):
+        config = configparser.ConfigParser()
+        config.read(Path.home() / "spiberry_config.ini")
+
+        merged = {}
+
+        # Backward compatible: [Vision] camera = {...}
+        if config.has_option("Vision", "camera"):
+            raw_camera = config.get("Vision", "camera")
+            try:
+                merged.update(cls._normalize_camera_config(raw_camera))
+            except ValueError:
+                pass
+
+        # Backward compatible: [Vision.Camera] section.
+        if config.has_section("Vision.Camera"):
+            for key, value in config.items("Vision.Camera"):
+                merged[key] = value
+
+        # Backward compatible: [Vision] camera_* keys.
+        if config.has_section("Vision"):
+            for key, value in config.items("Vision"):
+                if key.startswith("camera_"):
+                    merged[key.removeprefix("camera_")] = value
+
+        # Canonical section: [Camera] overrides legacy camera keys.
+        if config.has_section("Camera"):
+            for key, value in config.items("Camera"):
+                merged[key] = value
+
+        return merged
+
+    @classmethod
+    def _normalize_camera_config(cls, camera_config):
+        if camera_config is None:
+            return {}
+
+        parsed_config = camera_config
+        if isinstance(camera_config, str):
+            text = camera_config.strip()
+            if text == "":
+                return {}
+
+            parse_error = None
+            for parser in (json.loads, ast.literal_eval):
+                try:
+                    parsed_config = parser(text)
+                    break
+                except (json.JSONDecodeError, ValueError, SyntaxError) as e:
+                    parse_error = e
+            else:
+                raise ValueError(f"camera_config string is not a valid dict: {parse_error}")
+
+        if not isinstance(parsed_config, dict):
+            raise ValueError("camera_config must be a dictionary or a dictionary-like string")
+
+        normalized = {}
+        for key, value in parsed_config.items():
+            key = str(key)
+            if isinstance(value, dict):
+                normalized[key] = {
+                    str(sub_key): cls._coerce_scalar_value(sub_value)
+                    for sub_key, sub_value in value.items()
+                }
+            elif isinstance(value, (list, tuple)):
+                normalized[key] = [cls._coerce_scalar_value(item) for item in value]
+            else:
+                normalized[key] = cls._coerce_scalar_value(value)
+
+        return normalized
     
     def _configure_picamera2(self):
         """Configure picamera2 with the provided configuration."""
@@ -41,17 +142,27 @@ class Camera:
             # Full configuration dict provided (with streams)
             self.picam2.configure(self.camera_config)
         else:
-            # Assume it's a controls dict or partial config
-            # Create a still configuration and apply controls
-            config = self.picam2.create_still_configuration()
+            # Allow width/height as top-level keys in simplified config.
+            width = self.camera_config.get("width")
+            height = self.camera_config.get("height")
+            if isinstance(width, int) and isinstance(height, int):
+                config = self.picam2.create_still_configuration(main={"size": (width, height)})
+            else:
+                config = self.picam2.create_still_configuration()
             self.picam2.configure(config)
-            # Set controls if they were provided
-            if self.camera_config:
-                self.picam2.set_controls(self.camera_config)
+
+            controls = {
+                key: value
+                for key, value in self.camera_config.items()
+                if key not in {"width", "height", "timeout"}
+            }
+            if controls:
+                self.picam2.set_controls(controls)
     
     def _build_rpicam_command(self):
         """Build rpicam-still command with configuration options."""
-        cmd = ["rpicam-still", "-o", "captured_image.jpg", "--timeout", "1"]
+        timeout = self.camera_config.get("timeout", 1)
+        cmd = ["rpicam-still", "-o", "captured_image.jpg", "--timeout", str(timeout)]
         
         # Map common configuration options to rpicam-still arguments
         config_mapping = {
@@ -77,19 +188,24 @@ class Camera:
             "encoding": "--encoding",
             "timeout": "--timeout",
         }
+
+        flag_options = {"hflip", "vflip"}
         
         for key, value in self.camera_config.items():
-            if key in config_mapping:
-                option = config_mapping[key]
-                if isinstance(value, bool) and value:
-                    # Boolean flags (like hflip, vflip)
+            if key == "timeout":
+                continue
+
+            option = config_mapping.get(key, f"--{str(key).replace('_', '-')}")
+
+            if key in flag_options:
+                if bool(value):
                     cmd.append(option)
-                elif isinstance(value, (list, tuple)):
-                    # For options like awbgains that take comma-separated values
-                    cmd.extend([option, ",".join(map(str, value))])
-                elif value is not None:
-                    # Regular options with values
-                    cmd.extend([option, str(value)])
+            elif isinstance(value, (list, tuple)):
+                # For options like awbgains that take comma-separated values
+                cmd.extend([option, ",".join(map(str, value))])
+            elif value is not None:
+                # Regular options with values
+                cmd.extend([option, str(value)])
         
         return cmd
         

@@ -1,19 +1,59 @@
+import configparser
 import os
+from pathlib import Path
+import tempfile
 from time import sleep
 from spiberry.app.main import Controller
 from socket import socket, AF_INET, SOCK_STREAM
 
 
 DEVICE_TRACE_PREFIX = "TRACE:"
+CONFIG_PATH = Path.home() / "spiberry_config.ini"
 
 
 class RemoteDriveController(Controller):
     def __init__(self):
         self.init_mp_device()
-        self.robot_code_path = os.path.join(os.path.dirname(__file__), "remote_drive_code.py")
+        self.robot_code_source_path = Path(os.path.dirname(__file__)) / "remote_drive_code.py"
+        self.robot_code_path = str(self._create_runtime_code_file())
         
-        with open(self.robot_code_path, "r") as f:
+        with open(self.robot_code_path, "r", encoding="utf-8") as f:
             self.code = f.read()
+
+    def _create_runtime_code_file(self):
+        config = configparser.ConfigParser()
+        config.read(CONFIG_PATH)
+
+        left_motor = config.get("RemoteDrive", "left_motor", fallback="port.A").strip() or "port.A"
+        right_motor = config.get("RemoteDrive", "right_motor", fallback="port.B").strip() or "port.B"
+
+        with open(self.robot_code_source_path, "r", encoding="utf-8") as f:
+            remote_drive_code = f.read()
+
+        before_replace = remote_drive_code
+        remote_drive_code = remote_drive_code.replace("SOL_TEKER = port.A", f"SOL_TEKER = {left_motor}")
+        remote_drive_code = remote_drive_code.replace("SAG_TEKER = port.B", f"SAG_TEKER = {right_motor}")
+
+        if remote_drive_code == before_replace:
+            print("[host] Warning: failed to apply one or more motor port config values.")
+
+        with tempfile.NamedTemporaryFile(  
+            mode="w",  
+            encoding="utf-8",  
+            suffix=".py",  
+            prefix="spiberry_remote_drive_code_runtime_",  
+            delete=False,  
+        ) as tmp_file:  
+            tmp_file.write(remote_drive_code)  
+
+        runtime_code_path = Path(tmp_file.name) 
+
+        print(f"[host] Remote drive motor config -> left={left_motor}, right={right_motor}")
+        return runtime_code_path
+
+    def run_code(self):
+        self.robot_code_path = str(self._create_runtime_code_file())
+        super().run_code()
 
     def _trace(self, message):
         print(f"[host] {message}")

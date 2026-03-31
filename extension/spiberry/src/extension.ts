@@ -13,8 +13,20 @@ import {
 import { getControlPanelHtml } from './controlPanelHtml';
 
 const RELEASE_URL = 'https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz';
+const REMOTE_CONFIG_FILE_NAME = 'spiberry_config.ini';
+const DEFAULT_ROBOT_CODE_PATH = 'robot_code.py';
+const DEFAULT_RASPI_FUNCTIONS_PATH = 'raspi_functions/';
 
 let statusBarItem: vscode.StatusBarItem;
+
+type UploadPathConfigSource = 'device-config' | 'defaults';
+
+interface UploadPathConfig {
+    robotCodePath: string;
+    raspiFunctionsPath: string;
+    source: UploadPathConfigSource;
+    configPath: string;
+}
 
 class ControlPanelViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'spiberry.controlPanel';
@@ -130,6 +142,136 @@ function quoteForSingleQuotedShell(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
+function stripSpiberryBasePrefix(value: string): string {
+    const normalized = value.replace(/\\/g, '/').trim();
+    const match = normalized.match(/^(?:~\/spiberry\/|\/home\/[^/]+\/spiberry\/|spiberry\/)(.+)$/);
+    return match ? match[1] : normalized;
+}
+
+function sanitizeRelativeRemotePath(value: string | undefined, fallback: string): string {
+    const rawValue = value?.trim() ?? '';
+    const candidate = rawValue === '' ? fallback : rawValue;
+    const stripped = stripSpiberryBasePrefix(candidate);
+    const cleaned = stripped
+        .replace(/\\/g, '/')
+        .split('/')
+        .map((segment) => segment.trim())
+        .filter((segment) => segment !== '' && segment !== '.' && segment !== '..');
+    if (cleaned.length === 0) {
+        return fallback.replace(/\\/g, '/').replace(/\/+$/, '');
+    }
+    return cleaned.join('/');
+}
+
+function sanitizeRaspiFunctionsDirectory(value: string | undefined): string {
+    let directory = sanitizeRelativeRemotePath(value, DEFAULT_RASPI_FUNCTIONS_PATH);
+
+    if (directory.toLowerCase().endsWith('.py')) {
+        directory = path.posix.dirname(directory);
+    }
+    if (directory === '.' || directory === '') {
+        directory = 'raspi_functions';
+    }
+
+    return directory.replace(/\/+$/, '');
+}
+
+function parseCodeSectionFromIni(content: string): { path?: string; raspi_functions_path?: string } {
+    const result: { path?: string; raspi_functions_path?: string } = {};
+    const lines = content.split(/\r?\n/);
+    let inCodeSection = false;
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) {
+            continue;
+        }
+
+        const sectionMatch = trimmed.match(/^\[(.+)\]$/);
+        if (sectionMatch) {
+            inCodeSection = sectionMatch[1].trim().toLowerCase() === 'code';
+            continue;
+        }
+
+        if (!inCodeSection) {
+            continue;
+        }
+
+        const separatorIndex = trimmed.indexOf('=');
+        if (separatorIndex < 0) {
+            continue;
+        }
+
+        const key = trimmed.slice(0, separatorIndex).trim().toLowerCase();
+        let value = trimmed.slice(separatorIndex + 1).trim();
+        if (
+            (value.startsWith('"') && value.endsWith('"'))
+            || (value.startsWith("'") && value.endsWith("'"))
+        ) {
+            value = value.slice(1, -1);
+        }
+
+        if (key === 'path') {
+            result.path = value;
+        }
+        if (key === 'raspi_functions_path') {
+            result.raspi_functions_path = value;
+        }
+    }
+
+    return result;
+}
+
+function getRemoteConfigFilePath(username: string): string {
+    return `/home/${username}/${REMOTE_CONFIG_FILE_NAME}`;
+}
+
+async function resolveUploadPathConfig(sshConfig: DeviceSshConfig): Promise<UploadPathConfig> {
+    const username = sshConfig.username || 'pi';
+    const configPath = getRemoteConfigFilePath(username);
+
+    const defaults = {
+        robotCodePath: sanitizeRelativeRemotePath(DEFAULT_ROBOT_CODE_PATH, DEFAULT_ROBOT_CODE_PATH),
+        raspiFunctionsPath: sanitizeRaspiFunctionsDirectory(DEFAULT_RASPI_FUNCTIONS_PATH),
+        source: 'defaults' as UploadPathConfigSource,
+        configPath
+    };
+
+    let sshConnection;
+    try {
+        sshConnection = await createSshConnection(sshConfig);
+        const command = `cat ${quoteForSingleQuotedShell(configPath)}`;
+        const result = await sshConnection.execCommand(command);
+
+        if (typeof result.code === 'number' && result.code !== 0) {
+            const stderr = result.stderr?.trim() || 'unknown error';
+            vscode.window.showWarningMessage(`Could not read ${configPath} on device. Using default upload paths. (${stderr})`);
+            return defaults;
+        }
+
+        const codeSection = parseCodeSectionFromIni(result.stdout ?? '');
+        return {
+            robotCodePath: sanitizeRelativeRemotePath(codeSection.path ?? defaults.robotCodePath, DEFAULT_ROBOT_CODE_PATH),
+            raspiFunctionsPath: sanitizeRaspiFunctionsDirectory(codeSection.raspi_functions_path ?? defaults.raspiFunctionsPath),
+            source: 'device-config',
+            configPath
+        };
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error);
+        vscode.window.showWarningMessage(`Failed to read device config over SSH. Using default upload paths. (${message})`);
+        return defaults;
+    } finally {
+        sshConnection?.dispose();
+    }
+}
+
+function joinRemotePath(...segments: string[]): string {
+    const normalizedSegments = segments
+        .map((segment) => segment.replace(/\\/g, '/').trim())
+        .filter((segment) => segment !== '');
+    return path.posix.join(...normalizedSegments);
+}
+
 export function activate(context: vscode.ExtensionContext): void {
     console.log('Congratulations, your extension "spiberry" is now active!');
 
@@ -228,10 +370,21 @@ export function activate(context: vscode.ExtensionContext): void {
 
         vscode.window.showInformationMessage('Sending code to device...');
 
+        const uploadPathConfig = await resolveUploadPathConfig(sshConfig);
+
         const username = sshConfig.username || 'pi';
         const remoteDirectory = `/home/${username}/spiberry`;
-        const remoteFileName = isRobotCodeFile(editor.document) ? 'robot_code.py' : `raspi_functions/${fileName}`;
-        const remoteFilePath = `${remoteDirectory}/${remoteFileName}`;
+        const remoteRobotCodePath = joinRemotePath(remoteDirectory, uploadPathConfig.robotCodePath);
+        const remoteRaspiFunctionsDirectory = joinRemotePath(remoteDirectory, uploadPathConfig.raspiFunctionsPath);
+        const remoteFilePath = isRobotCodeFile(editor.document)
+            ? remoteRobotCodePath
+            : joinRemotePath(remoteRaspiFunctionsDirectory, fileName);
+
+        if (uploadPathConfig.source === 'device-config') {
+            console.log(`Using upload paths from ${uploadPathConfig.configPath}`);
+        } else {
+            console.log('Using default upload paths (device config unavailable).');
+        }
 
         await sendFileToDevice(localFilePath, remoteFilePath, sshConfig);
     });

@@ -90,8 +90,8 @@ class MenuRenderer:
         print(f"  {Colors.MAGENTA}▸{Colors.RESET} ", end="", flush=True)
 
 
-def running_in_correct_venv():
-    if sys.prefix == sys.base_prefix or Path(sys.prefix) != Path(__file__).resolve().parent.parent / VENV_DIR:
+def running_in_correct_venv(expected_venv_path):
+    if sys.prefix == sys.base_prefix or Path(sys.prefix) != expected_venv_path:
         return False
 
     libs = set([d.metadata["Name"].lower() for d in metadata.distributions()])
@@ -486,19 +486,22 @@ def main():
     #         work_dir = zip_path.parent
 
     extract_dir = work_dir / EXTRACT_DIR
-    venv_path = work_dir / VENV_DIR
-    
+    # Keep the venv inside the extracted app directory.
+    venv_path = extract_dir / VENV_DIR
 
-    if running_in_correct_venv():
-        from app.main import main as app_main
-        app_main()
+    if running_in_correct_venv(venv_path):
+        from spiberry.app.main import Controller
+        Controller().main()
         return
-    else:
+
+    extract_if_needed(zip_path, extract_dir)
+
+    if not venv_path.exists():
         print("Not running in (correct) virtual environment. Setting up...")
         create_venv(venv_path)
         first_setup = True
-
-    extract_if_needed(zip_path, extract_dir)
+    else:
+        first_setup = False
 
     # first_setup = not venv_path.exists()
 
@@ -515,8 +518,11 @@ def main():
             install_extra(python, extra_libs)
 
     if len(sys.argv) > 1 and sys.argv[1] == "--set-pins":
-        pin_args = interactive_pin_menu()
-        pin_args = [sys.argv[0]] + [f"{k} {v}" for k, v in pin_args.items()] + sys.argv[1:]
+        selected_pins = interactive_pin_menu()
+        pin_args = [arg for arg in sys.argv[1:] if arg != "--set-pins"]
+        if selected_pins:
+            for key, value in selected_pins.items():
+                pin_args.extend([key, str(value)])
     
     fix_permissions(work_dir)
     # Make scripts executable
@@ -529,7 +535,7 @@ def main():
     if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
         template = extract_dir / "sbe.service"
         service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m app.main" + " " + " ".join(pin_args if 'pin_args' in locals() else sys.argv[1:]))
+        service = service.replace("<execstart>", str(python) + " -m spiberry.app.main" + " " + " ".join(pin_args if 'pin_args' in locals() else sys.argv[1:]))
         service = service.replace("<workingdirectory>", str(extract_dir))
         destination = Path("/etc/systemd/system/sbe.service")
         destination.write_text(service)

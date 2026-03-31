@@ -1,12 +1,15 @@
+import argparse
 import os
+from pathlib import Path
 import sys
 import re
 import ast
 import json
 import logging
 import threading
-import argparse
+import configparser
 import importlib
+import importlib.util
 from time import sleep
 
 import gpiozero
@@ -31,11 +34,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SpiBerryEngine")
 
-starter_pin = Button(21, pull_up=True)
-if not starter_pin.is_pressed or os.getenv("IGNORE_STARTER_PIN") == "1":
-    logger.critical("Starter pin not connected to ground. Please connect pin 21 to ground to start the program.")
-    sys.exit(1)
-
 
 PRINT_LEVEL = 25
 logging.addLevelName(PRINT_LEVEL, "PRINT")
@@ -46,18 +44,117 @@ def print_log(self, message, *args, **kwargs):
 
 logging.Logger.print = print_log
 
-parser = argparse.ArgumentParser(description="SpiBerryEngine GPIO pin configuration")
-parser.add_argument('--button', type=int, default=17, help='GPIO pin for button')
-parser.add_argument('--red', type=int, default=0, help='GPIO pin for RGBLED red')
-parser.add_argument('--green', type=int, default=11, help='GPIO pin for RGBLED green')
-parser.add_argument('--blue', type=int, default=9, help='GPIO pin for RGBLED blue')
-parser.add_argument('code_path', nargs='?', default='robot_code.py', help='Path to the robot code file')
-parser.add_argument('--vision', action='store_true', default=False, help='Enable vision module')
-args = parser.parse_args()
-ROBOT_CODE = args.code_path
+starter_pin = Button(21, pull_up=True)
+if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
+    logger.critical("Starter pin not connected to ground. Please connect pin 21 to ground to start the program.")
+    sys.exit(1)
 
-rgbLED = RGBLED(args.red, args.green, args.blue, active_high=False)
-button = Button(args.button,pull_up=True)
+CONFIG_PATH = Path.home() / "spiberry_config.ini"
+logger.info("Using config file at %s", CONFIG_PATH)
+if not CONFIG_PATH.exists():
+    config = configparser.ConfigParser()
+    config["GPIO"] = {
+        "red": "0",
+        "green": "11",
+        "blue": "9",
+        "button": "17",
+        "active_high": "False"
+    }
+    config["Code"] = {
+        "path": "robot_code.py",
+        "raspi_functions_path": "raspi_functions/",
+    }
+    config["Vision"] = {
+        "enabled": "False",
+    }
+    config["Camera"] = {
+        "take_picture_method": "picamera2",
+        "timeout": "0",
+        "width": "1920",
+        "height": "1080",
+    }
+    config["RemoteDrive"] = {
+        "left_motor":"port.A",
+        "right_motor":"port.B",
+    }
+
+    with open(CONFIG_PATH, "w") as f:
+        config.write(f)
+
+
+PIN_ARG_TO_CONFIG_KEY = {
+    "--red": "red",
+    "--green": "green",
+    "--blue": "blue",
+    "--button": "button",
+}
+
+
+def _parse_pin_overrides(argv):
+    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
+    parser.add_argument("--red", type=int)
+    parser.add_argument("--green", type=int)
+    parser.add_argument("--blue", type=int)
+    parser.add_argument("--button", type=int)
+
+    try:
+        parsed_args, _ = parser.parse_known_args(argv)
+    except SystemExit:
+        logger.warning("Ignoring invalid pin CLI arguments.")
+        return {}
+
+    overrides = {}
+    for config_key in PIN_ARG_TO_CONFIG_KEY.values():
+        pin_value = getattr(parsed_args, config_key)
+        if pin_value is None:
+            continue
+
+        overrides[config_key] = str(pin_value)
+
+    return overrides
+
+
+def _apply_pin_overrides_from_cli(config_obj, config_path: Path):
+    pin_overrides = _parse_pin_overrides(sys.argv[1:])
+    if not pin_overrides:
+        return
+
+    if not config_obj.has_section("GPIO"):
+        config_obj["GPIO"] = {}
+
+    for key, value in pin_overrides.items():
+        config_obj["GPIO"][key] = value
+
+    try:
+        with open(config_path, "w") as f:
+            config_obj.write(f)
+        logger.info("Applied GPIO pin overrides from CLI args: %s", ", ".join(f"{k}={v}" for k, v in pin_overrides.items()))
+    except OSError as e:
+        logger.error("Failed to persist GPIO pin overrides to config file: %s", e)
+
+
+config = configparser.ConfigParser()
+config.read(CONFIG_PATH)
+_apply_pin_overrides_from_cli(config, CONFIG_PATH)
+
+ROBOT_CODE = config.get("Code", "path", "robot_code.py")
+RASPI_FUNCTIONS_PATH = Path(
+    config.get("Code", "raspi_functions_path", fallback="raspi_functions/")
+).expanduser()
+if not RASPI_FUNCTIONS_PATH.is_absolute():
+    RASPI_FUNCTIONS_PATH = (Path.home() / "spiberry" / RASPI_FUNCTIONS_PATH).resolve()
+
+
+def _resolve_raspi_module_file(configured_path: Path) -> Path:
+    if configured_path.suffix == ".py":
+        return configured_path
+    return configured_path / "__init__.py"
+
+
+RASPI_FUNCTIONS_MODULE_FILE = _resolve_raspi_module_file(RASPI_FUNCTIONS_PATH)
+
+rgbLED = RGBLED(config.getint("GPIO", "red"), config.getint("GPIO", "green"), config.getint("GPIO", "blue"), active_high=config.getboolean("GPIO", "active_high", fallback=False))
+button = Button(config.getint("GPIO", "button"), pull_up=True)
 
 # Device constructor map - maps device type to constructor function
 # Each entry: (min_params, constructor_lambda)
@@ -81,19 +178,33 @@ DEVICE_CONSTRUCTORS = {
     )),
 }
 
+def _load_raspi_functions_module(module_file: Path):
+    module_file.parent.mkdir(parents=True, exist_ok=True)
+    if not module_file.exists():
+        with open(module_file, "w") as f:
+            f.write("# Add your Raspberry Pi functions here\n")
 
-try:
-    import spiberry.raspi_functions as raspi_functions
-except ImportError:
-    os.makedirs("raspi_functions", exist_ok=True)
-    with open("raspi_functions/__init__.py", "w") as f:
-        f.write("# Add your Raspberry Pi functions here\n")
-    import spiberry.raspi_functions as raspi_functions
+    is_package = module_file.name == "__init__.py"
+    spec = importlib.util.spec_from_file_location(
+        "raspi_functions",
+        str(module_file),
+        submodule_search_locations=[str(module_file.parent)] if is_package else None,
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load module spec from {module_file}")
 
-if args.vision:
-    import app.vision as vision
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["raspi_functions"] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+raspi_functions = _load_raspi_functions_module(RASPI_FUNCTIONS_MODULE_FILE)
+logger.info("Loaded raspi_functions from %s", RASPI_FUNCTIONS_MODULE_FILE)
+
+if config.getboolean("Vision", "enabled"):
+    import spiberry.app.vision as vision
     logger.info("Vision module loaded.")
-
 
 
 class HotReloadHandler(FileSystemEventHandler):
@@ -112,10 +223,14 @@ class HotReloadHandler(FileSystemEventHandler):
                     self.controller.code = new_code
                     self.last_code = new_code
                     
-        elif event.src_path.endswith("raspi_functions.py"):
-            importlib.reload(raspi_functions)
-            logger.info("Hot reloaded raspi_functions module.")
-            rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=False)
+        else:
+            try:
+                if Path(event.src_path).resolve() == RASPI_FUNCTIONS_MODULE_FILE:
+                    importlib.reload(raspi_functions)
+                    logger.info("Hot reloaded raspi_functions module.")
+                    rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=False)
+            except OSError:
+                logger.debug("Skipping unresolved modified path: %s", event.src_path)
 
 class Controller:
     def __init__(self):
@@ -365,7 +480,7 @@ class Controller:
         )
 
     def _initialize_vision_runtime(self, args_list, kwargs):
-        if not args.vision:
+        if not config.getboolean("Vision", "enabled"):
             return self._result_payload("error", code="error-vision_module_disabled")
 
         # Positional compatibility:
@@ -384,7 +499,7 @@ class Controller:
         try:
             camera = vision.Camera(take_picture_method=take_picture_method, camera_config=camera_config)
             vision_model = vision.Vision(model_path=model_path, camera=camera)
-            contour = vision.ContourDetector(camera=camera)
+            contour = vision.ContourDetector(config_path=config.get("Vision", "vision_config_path", fallback=None), camera=camera)
         except Exception as e:
             logger.error("Vision initialization failed: %s", e)
             return self._result_payload("error", code="error-vision_initialize_failed", message=str(e))
@@ -529,8 +644,8 @@ class Controller:
             return self._result_payload("ok", action="ContourDetector.extend_all_color_ranges", color_ranges=extended)
 
         if method == "load_config":
-            config = self.vision_contour.load_config()
-            self.vision_contour.config = config
+            vis_config = self.vision_contour.load_config(config_path=config.get("Vision", "vision_config_path", fallback=None))
+            self.vision_contour.config = vis_config
             return self._result_payload("ok", action="ContourDetector.load_config")
 
         return self._result_payload("error", code="error-unknown_vision_method", target=f"ContourDetector.{method}")
@@ -584,7 +699,7 @@ class Controller:
                 return self._result_payload("error", code="error-device_dispatch_failure", message=str(e))
 
         if root == "vision":
-            if not args.vision:
+            if not config.getboolean("Vision", "enabled"):
                 return self._result_payload("error", code="error-vision_module_disabled")
             try:
                 return self.handle_vision_function_call(parsed=(path, args_list, kwargs))

@@ -8,6 +8,10 @@ export interface DeviceSshConfig {
     password: string;
 }
 
+function quoteForSingleQuotedShell(value: string): string {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
 export async function checkDeviceReachabilityAndServiceStatus(sshConfig: DeviceSshConfig): Promise<[boolean, string]> {
     const ssh = new NodeSSH();
     try {
@@ -53,6 +57,12 @@ export async function sendFileToDevice(
         async () => {
             try {
                 await ssh.connect(sshConfig);
+                const remoteDirectory = path.posix.dirname(remoteFilePath);
+                const mkdirResult = await ssh.execCommand(`mkdir -p ${quoteForSingleQuotedShell(remoteDirectory)}`);
+                if (typeof mkdirResult.code === 'number' && mkdirResult.code !== 0) {
+                    const stderr = mkdirResult.stderr?.trim() || 'unknown error';
+                    throw new Error(`Failed to create remote directory ${remoteDirectory}: ${stderr}`);
+                }
                 await ssh.putFile(localFilePath, remoteFilePath);
                 vscode.window.showInformationMessage(`Successfully sent ${path.basename(localFilePath)} to remote device!`);
             } catch (error: unknown) {
