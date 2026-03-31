@@ -50,6 +50,7 @@ if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
     sys.exit(1)
 
 CONFIG_PATH = Path.home() / "spiberry_config.ini"
+logger.info("Using config file at %s", CONFIG_PATH)
 if not CONFIG_PATH.exists():
     config = configparser.ConfigParser()
     config["GPIO"] = {
@@ -141,7 +142,7 @@ RASPI_FUNCTIONS_PATH = Path(
     config.get("Code", "raspi_functions_path", fallback="raspi_functions/")
 ).expanduser()
 if not RASPI_FUNCTIONS_PATH.is_absolute():
-    RASPI_FUNCTIONS_PATH = (Path.cwd() / RASPI_FUNCTIONS_PATH).resolve()
+    RASPI_FUNCTIONS_PATH = (Path.home() / "spiberry" / RASPI_FUNCTIONS_PATH).resolve()
 
 
 def _resolve_raspi_module_file(configured_path: Path) -> Path:
