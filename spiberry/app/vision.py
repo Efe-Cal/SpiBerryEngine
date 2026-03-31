@@ -74,7 +74,7 @@ class ContourDetector:
     EXTENSION_OFFSET = (10, 30, 30)  # Offset for extending color ranges
     FALLBACK_CONFIG = {"big_box_crop": [1735, 657, 172, 122], "color_ranges": {"red": [[[0, 143, 54], [12, 253, 164]], [[162, 143, 54], [179, 253, 164]]], "green": [[[39, 173, 95], [59, 255, 205]]], "blue": [[[94, 173, 45], [124, 255, 155]]], "yellow": [[[7, 170, 99], [37, 255, 209]]]}}
     
-    def __init__(self, config_path=None, camera:Camera=None):
+    def __init__(self, camera:Camera=None, config_path=None):
         self.camera = camera if camera else Camera()
         self.config = self.load_config(config_path)
         self.retry_with_extended = False

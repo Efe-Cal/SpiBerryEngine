@@ -37,9 +37,16 @@ class RemoteDriveController(Controller):
         if remote_drive_code == before_replace:
             print("[host] Warning: failed to apply one or more motor port config values.")
 
-        runtime_code_path = Path(tempfile.gettempdir()) / "spiberry_remote_drive_code_runtime.py"
-        with open(runtime_code_path, "w", encoding="utf-8") as f:
-            f.write(remote_drive_code)
+        with tempfile.NamedTemporaryFile(  
+            mode="w",  
+            encoding="utf-8",  
+            suffix=".py",  
+            prefix="spiberry_remote_drive_code_runtime_",  
+            delete=False,  
+        ) as tmp_file:  
+            tmp_file.write(remote_drive_code)  
+
+        runtime_code_path = Path(tmp_file.name) 
 
         print(f"[host] Remote drive motor config -> left={left_motor}, right={right_motor}")
         return runtime_code_path

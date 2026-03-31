@@ -137,7 +137,7 @@ config = configparser.ConfigParser()
 config.read(CONFIG_PATH)
 _apply_pin_overrides_from_cli(config, CONFIG_PATH)
 
-ROBOT_CODE = config.get("Code", "path")
+ROBOT_CODE = config.get("Code", "path", "robot_code.py")
 RASPI_FUNCTIONS_PATH = Path(
     config.get("Code", "raspi_functions_path", fallback="raspi_functions/")
 ).expanduser()
@@ -203,7 +203,7 @@ raspi_functions = _load_raspi_functions_module(RASPI_FUNCTIONS_MODULE_FILE)
 logger.info("Loaded raspi_functions from %s", RASPI_FUNCTIONS_MODULE_FILE)
 
 if config.getboolean("Vision", "enabled"):
-    import app.vision as vision
+    import spiberry.app.vision as vision
     logger.info("Vision module loaded.")
 
 
