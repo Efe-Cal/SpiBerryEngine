@@ -16,7 +16,13 @@ Transfer the `spiberry.pyz` file to your Raspberry Pi and run it:
 ```bash
 python spiberry.pyz
 ```
-It will create a virtual environment, install dependencies and setup a system service to run the engine on boot. You can also specify GPIO pins for the RGB LED and button during installation or later using the `--set-pins` option.
+It will create a virtual environment and install dependencies. Service installation is explicit via the `--install-service` flag. You can also specify GPIO pins during installation or later using the `--set-pins` option.
+
+Install and optionally start the service from the installer flow:
+
+```bash
+sudo python spiberry.pyz --install-service --start-service --no-run
+```
 
 ## Hardware Setup
 

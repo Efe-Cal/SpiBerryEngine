@@ -1,0 +1,74 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spiberry-engine"
+version = "0.1.0"
+description = "Control LEGO SPIKE with a Raspberry Pi and mpremote"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "Efe-Cal" }
+]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Operating System :: POSIX :: Linux",
+  "Intended Audience :: Developers",
+  "Topic :: Software Development :: Embedded Systems"
+]
+dependencies = [
+  "colorzero==2.0",
+  "gpiozero==2.0.1",
+  "mpremote==1.25.0",
+  "pyserial==3.5",
+  "watchdog==6.0.0",
+  "rpi-lgpio==0.6; platform_system == 'Linux'"
+]
+
+[project.optional-dependencies]
+vision = [
+  "opencv-python>=4.9,<5",
+  "ultralytics>=8,<9",
+  "scipy>=1.11,<2"
+]
+controller = [
+  "approxeng.input>=2,<3"
+]
+camera = [
+  "picamera2>=0.3; platform_system == 'Linux'"
+]
+full = [
+  "opencv-python>=4.9,<5",
+  "ultralytics>=8,<9",
+  "scipy>=1.11,<2",
+  "approxeng.input>=2,<3",
+  "picamera2>=0.3; platform_system == 'Linux'"
+]
+
+[project.scripts]
+spiberry = "spiberry.cli:run_engine"
+spiberry-remote-drive = "spiberry.cli:run_remote_drive"
+spiberry-remote-drive-socket = "spiberry.cli:run_remote_drive_socket"
+spiberry-install-service = "spiberry.cli:install_service_cli"
+spiberry-start = "spiberry.cli:start_service"
+spiberry-stop = "spiberry.cli:stop_service"
+spiberry-restart = "spiberry.cli:restart_service"
+spiberry-enable = "spiberry.cli:enable_service"
+spiberry-disable = "spiberry.cli:disable_service"
+spiberry-status = "spiberry.cli:status_service"
+spiberry-extract = "spiberry.cli:extract_package_content"
+spiberry-installer = "spiberry.__main__:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["spiberry*"]
+exclude = ["spiberry.scripts*"]
+
+[tool.setuptools.package-data]
+spiberry = ["sbe.service"]
