@@ -1,10 +1,10 @@
 import argparse
 
 
-def run_engine():
+def run_engine(robot_code_path=None):
     from spiberry.app.main import Controller
 
-    Controller().main()
+    Controller(robot_code_path=robot_code_path).main()
 
 
 def run_remote_drive():
@@ -19,20 +19,8 @@ def run_remote_drive_socket():
     RemoteDriveController().start_with_socket()
 
 
-def install_service_cli():
+def install_service_cli(args):
     from spiberry.service import install_service
-
-    parser = argparse.ArgumentParser(description="Install SpiBerryEngine as a systemd service.")
-    parser.add_argument("--service-name", default="sbe.service", help="Systemd service file name")
-    parser.add_argument("--start", action="store_true", help="Start the service immediately")
-    parser.add_argument(
-        "--app-args",
-        nargs=argparse.REMAINDER,
-        default=[],
-        help="Arguments passed to spiberry.app.main (use after --app-args)",
-    )
-
-    args = parser.parse_args()
     install_service(service_name=args.service_name, app_args=args.app_args, start=args.start)
 
 
@@ -99,3 +87,59 @@ def extract_package_content():
         print(f"Successfully extracted package content to {target_dir}")
     except Exception as e:
         print(f"Error during extraction: {e}")
+
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="SpiBerryEngine CLI")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    run_parser = subparsers.add_parser("run-engine", help="Run the SpiBerryEngine application")
+    run_parser.add_argument("robot_code", nargs="?", help="Path to the robot code file (optional)", default=None)
+    subparsers.add_parser("run-remote-drive-socket", help="Run the remote drive controller with socket interface")
+    
+    install_parser = subparsers.add_parser("install-service", help="Install SpiBerryEngine as a systemd service")
+    install_parser.add_argument("--service-name", default="sbe.service", help="Systemd service file name")
+    install_parser.add_argument("--start", action="store_true", help="Start the service immediately")
+    install_parser.add_argument(
+        "--app-args",
+        nargs=argparse.REMAINDER,
+        default=[],
+        help="Arguments passed to spiberry.app.main (use after --app-args)",
+    )
+
+    subparsers.add_parser("start-service", help="Start the SpiBerryEngine systemd service")
+    subparsers.add_parser("stop-service", help="Stop the SpiBerryEngine systemd service")
+    subparsers.add_parser("restart-service", help="Restart the SpiBerryEngine systemd service")
+    subparsers.add_parser("enable-service", help="Enable the SpiBerryEngine systemd service")
+    subparsers.add_parser("disable-service", help="Disable the SpiBerryEngine systemd service")
+    subparsers.add_parser("status-service", help="Check the status of the SpiBerryEngine systemd service")
+    subparsers.add_parser("extract-package", help="Extract the contents of the spiberry package to the user's home directory")
+    args = parser.parse_args()
+
+    if args.command == "run-engine":
+        if args.robot_code:
+            run_engine(robot_code_path=args.robot_code)
+        else:
+            run_engine()
+    elif args.command == "run-remote-drive":
+        run_remote_drive()
+    elif args.command == "run-remote-drive-socket":
+        run_remote_drive_socket()
+    elif args.command == "install-service":
+        install_service_cli(args)
+    elif args.command == "start-service":
+        start_service()
+    elif args.command == "stop-service":
+        stop_service()
+    elif args.command == "restart-service":
+        restart_service()
+    elif args.command == "enable-service":
+        enable_service()
+    elif args.command == "disable-service":
+        disable_service()
+    elif args.command == "status-service":
+        status_service()
+    elif args.command == "extract-package":
+        extract_package_content()
+
+if __name__ == "__main__":
+    main()

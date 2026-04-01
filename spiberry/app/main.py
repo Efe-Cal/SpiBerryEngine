@@ -214,8 +214,8 @@ class HotReloadHandler(FileSystemEventHandler):
         self.last_code = controller.code
 
     def on_modified(self, event):
-        if event.src_path.endswith(ROBOT_CODE):
-            with open(ROBOT_CODE, "r") as f:
+        if event.src_path.endswith(self.controller.robot_code_path):
+            with open(self.controller.robot_code_path, "r") as f:
                 new_code = f.read()
                 if new_code != self.last_code:
                     logger.info("Hot reloaded robot_code.py")
@@ -233,10 +233,10 @@ class HotReloadHandler(FileSystemEventHandler):
                 logger.debug("Skipping unresolved modified path: %s", event.src_path)
 
 class Controller:
-    def __init__(self):
+    def __init__(self, robot_code_path=ROBOT_CODE):
         self.devices = {}
         self.code = ""
-        self.robot_code_path = ROBOT_CODE
+        self.robot_code_path = robot_code_path if robot_code_path else ROBOT_CODE
         self.vision_camera = None
         self.vision_model = None
         self.vision_contour = None

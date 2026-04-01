@@ -50,7 +50,7 @@ full = [
 ]
 
 [project.scripts]
-spiberry = "spiberry.cli:run_engine"
+spiberry = "spiberry.cli:main"
 spiberry-remote-drive = "spiberry.cli:run_remote_drive"
 spiberry-remote-drive-socket = "spiberry.cli:run_remote_drive_socket"
 spiberry-install-service = "spiberry.cli:install_service_cli"
