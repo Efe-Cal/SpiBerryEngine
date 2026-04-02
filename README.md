@@ -2,34 +2,56 @@
 
 A project that aims to primarily control LEGO SPIKE with a Raspberry Pi.
 It uses the `mpremote` tool to communicate with the LEGO SPIKE hub.
-I believe it can also be used with other micropython devices.
-
-Note: See [the VS Code Extension](extension/spiberry/README.md) for easier installation and code deployment. The methods described in this README are still supported but the extension provides a more user-friendly interface.
 
 See [this Youtube video](https://youtu.be/eZQZYIM7QZc) for an introduction and demonstration of the project.
 
 ## Installation
 
-### Installing the Engine
+### Recommended: Installing via PyPI
+
+The simplest way to install SpiBerryEngine is from PyPI:
+
+```bash
+pip install spiberry-engine
+```
+
+For vision support (OpenCV/Ultralytics) and camera features:
+
+```bash
+pip install "spiberry-engine[full]"
+```
+
+Other extras:
+- `spiberry-engine[vision]` - Vision features (OpenCV/Ultralytics)
+- `spiberry-engine[camera]` - Camera capture features
+- `spiberry-engine[controller]` - Remote drive controller features
+
+After installation, initialize your environment (creates config and default robot code):
+
+```bash
+spiberry init
+```
+
+### Alternative: Using the Engine Standalone
 
 Transfer the `spiberry.pyz` file to your Raspberry Pi and run it:
 ```bash
 python spiberry.pyz
 ```
-It will create a virtual environment and install dependencies. Service installation is explicit via the `--install-service` flag. You can also specify GPIO pins during installation or later using the `--set-pins` option.
+It will create a virtual environment and install dependencies. Service installation is explicit via the `--install-service` flag. 
 
 Install and optionally start the service from the installer flow:
 
 ```bash
-sudo python spiberry.pyz --install-service --start-service --no-run
+sudo python spiberry.pyz --install-service --start-service
 ```
 
 ## Hardware Setup
 
 Connect the following components to your Raspberry Pi:
 
-- **Starter Pin**: Must be connected to ground (GPIO 21) to start the program. You can bypass this by setting the environment variable `IGNORE_STARTER_PIN=1`.
-- **RGB LED**: Connect to the GPIO pins specified during installation or defaults:
+- **Starter Pin**: Must be connected to ground (GPIO 21 by default) to start the program. You can bypass this by setting the environment variable `IGNORE_STARTER_PIN=1`.
+- **RGB LED**: Connect to the GPIO pins specified during initialization or defaults:
   - Red: GPIO 0
   - Green: GPIO 11
   - Blue: GPIO 9
@@ -37,16 +59,29 @@ Connect the following components to your Raspberry Pi:
 
 ## Usage
 
-### Running Manually
+### CLI Commands
 
-To run the engine manually, execute the following command on your Raspberry Pi, and optionally specify the GPIO pins for the RGB LED and button:
+When installed via PyPI, several commands are available:
+
+| Command | Description |
+|---------|-------------|
+| `spiberry init` | Initialize default config and robot code |
+| `spiberry run-engine` | Run the main engine |
+| `spiberry-start` | Start the systemd service |
+| `spiberry-stop` | Stop the systemd service |
+| `spiberry-status` | Check service status |
+| `spiberry-remote-drive` | Start remote drive controller |
+
+### Running the Engine
+
+To run the engine manually with the default configuration:
 ```bash
-python spiberry.pyz --blue 11 --button 22
+spiberry run-engine
 ```
 
-Alternatively, you can use `--set-pins` to interactively configure pins during or after installation:
+You can also specify a custom robot code file:
 ```bash
-python spiberry.pyz --set-pins
+spiberry run-engine my_cool_robot.py
 ```
 
 ### Configuration File
@@ -57,7 +92,7 @@ SpiBerryEngine stores runtime settings in:
 ~/spiberry_config.ini
 ```
 
-On first run, this file is created automatically with defaults similar to:
+On first run or with the `spiberry init` command, this file is created automatically with defaults similar to:
 
 ```ini
 [GPIO]
@@ -97,12 +132,18 @@ Notes:
 CLI GPIO pin arguments are now persisted into the config file when provided:
 
 ```bash
+# Example if running standalone
 python spiberry.pyz --red 0 --green 11 --blue 9 --button 17
 ```
 
 The values are then saved under `[GPIO]`.
 
+## Deployment & Extension
+
+Note: See [the VS Code Extension](extension/spiberry/README.md) for easier installation and code deployment. The extension provides a user-friendly interface, and is recommended.
+
 ### Deploying Code
+Recommended method: Use the [VS Code Extension](extension/spiberry/README.md)  
 
 Use [deploy_robot_code.py](deploy_robot_code.py) to deploy your robot code:
 
