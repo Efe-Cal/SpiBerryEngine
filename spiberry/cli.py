@@ -132,6 +132,7 @@ def main():
     subparsers = parser.add_subparsers(dest="command", required=True)
     run_parser = subparsers.add_parser("run-engine", help="Run the SpiBerryEngine application")
     run_parser.add_argument("robot_code", nargs="?", help="Path to the robot code file (optional)", default=None)
+    subparsers.add_parser("run-remote-drive", help="Run the remote drive controller with a connected game controller")
     subparsers.add_parser("run-remote-drive-socket", help="Run the remote drive controller with socket interface")
     
     install_parser = subparsers.add_parser("install-service", help="Install SpiBerryEngine as a systemd service")

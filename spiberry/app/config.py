@@ -41,6 +41,7 @@ def create_default_config():
         with open(CONFIG_PATH, "w") as f:
             config.write(f)
 
+create_default_config()
 
 def _parse_pin_overrides(argv):
     parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)

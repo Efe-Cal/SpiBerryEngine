@@ -485,7 +485,7 @@ def install_systemd_service(extract_dir, python, app_args=None, start_service=Fa
 
 
 def main():
-    installer_flags = {"--install-service", "--start-service", "--no-run"}
+    installer_flags = {"--install-service", "--start-service", "--run"}
     install_service_requested = "--install-service" in sys.argv[1:]
     start_service_requested = "--start-service" in sys.argv[1:]
     run_requested = "--run" in sys.argv[1:]
