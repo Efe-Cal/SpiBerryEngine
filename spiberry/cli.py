@@ -1,5 +1,43 @@
-import argparse
+import os
 
+def init_env():
+    import subprocess
+    from pathlib import Path
+    from spiberry.app.config import create_default_config, CONFIG_PATH
+
+    create_default_config()
+    
+    editor = os.environ.get("VISUAL") or os.environ.get("EDITOR")
+    if not editor:
+        editor = "nano"
+    
+    print(f"Opening config file {CONFIG_PATH} for review in {editor}...")
+    try:
+        subprocess.run([editor, str(CONFIG_PATH)], check=True)
+    except Exception as e:
+        print(f"Error opening editor: {e}")
+        return
+
+    # After exiting the editor, create the directories and files specified in the config
+    import configparser
+    config = configparser.ConfigParser()
+    config.read(CONFIG_PATH)
+    
+    try:
+        code_path = Path(config.get("Code", "path")).expanduser()
+        functions_path = Path(config.get("Code", "raspi_functions_path")).expanduser()
+        
+        code_path.parent.mkdir(parents=True, exist_ok=True)
+        functions_path.mkdir(parents=True, exist_ok=True)
+        
+        if not code_path.exists():
+            print(f"Creating default robot code at {code_path}")
+            with open(code_path, "w") as f:
+                f.write("# Default SpiBerryEngine robot code\n\ndef main():\n    print('Hello SpiBerry!')\n\nif __name__ == '__main__':\n    main()\n")
+                
+        print("Environment initialization complete.")
+    except Exception as e:
+        print(f"Error creating files/directories: {e}")
 
 def run_engine(robot_code_path=None):
     from spiberry.app.main import Controller
@@ -113,6 +151,7 @@ def main():
     subparsers.add_parser("disable-service", help="Disable the SpiBerryEngine systemd service")
     subparsers.add_parser("status-service", help="Check the status of the SpiBerryEngine systemd service")
     subparsers.add_parser("extract-package", help="Extract the contents of the spiberry package to the user's home directory")
+    subparsers.add_parser("init", help="Initialize the SpiBerryEngine environment by creating default config and files")
     args = parser.parse_args()
 
     if args.command == "run-engine":
@@ -140,6 +179,8 @@ def main():
         status_service()
     elif args.command == "extract-package":
         extract_package_content()
+    elif args.command == "init":
+        init_env()
 
 if __name__ == "__main__":
     main()
