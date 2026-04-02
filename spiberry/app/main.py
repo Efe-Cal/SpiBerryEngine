@@ -1,4 +1,3 @@
-import argparse
 import os
 from pathlib import Path
 import sys
@@ -7,7 +6,6 @@ import ast
 import json
 import logging
 import threading
-import configparser
 import importlib
 import importlib.util
 from time import sleep
@@ -44,114 +42,14 @@ def print_log(self, message, *args, **kwargs):
 
 logging.Logger.print = print_log
 
-starter_pin = Button(21, pull_up=True)
+from spiberry.app.config import config, create_default_config, RASPI_FUNCTIONS_MODULE_FILE, ROBOT_CODE
+
+create_default_config()
+
+starter_pin = Button(config.getint("GPIO", "starter", fallback=21), pull_up=True)
 if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
-    logger.critical("Starter pin not connected to ground. Please connect pin 21 to ground to start the program.")
+    logger.critical("Starter pin not connected to ground. Please connect pin %s to ground to start the program.", config.get("GPIO", "starter", fallback="21"))
     sys.exit(1)
-
-CONFIG_PATH = Path.home() / "spiberry_config.ini"
-logger.info("Using config file at %s", CONFIG_PATH)
-if not CONFIG_PATH.exists():
-    config = configparser.ConfigParser()
-    config["GPIO"] = {
-        "red": "0",
-        "green": "11",
-        "blue": "9",
-        "button": "17",
-        "active_high": "False"
-    }
-    config["Code"] = {
-        "path": "robot_code.py",
-        "raspi_functions_path": "raspi_functions/",
-    }
-    config["Vision"] = {
-        "enabled": "False",
-    }
-    config["Camera"] = {
-        "take_picture_method": "picamera2",
-        "timeout": "0",
-        "width": "1920",
-        "height": "1080",
-    }
-    config["RemoteDrive"] = {
-        "left_motor":"port.A",
-        "right_motor":"port.B",
-    }
-
-    with open(CONFIG_PATH, "w") as f:
-        config.write(f)
-
-
-PIN_ARG_TO_CONFIG_KEY = {
-    "--red": "red",
-    "--green": "green",
-    "--blue": "blue",
-    "--button": "button",
-}
-
-
-def _parse_pin_overrides(argv):
-    parser = argparse.ArgumentParser(add_help=False, allow_abbrev=False)
-    parser.add_argument("--red", type=int)
-    parser.add_argument("--green", type=int)
-    parser.add_argument("--blue", type=int)
-    parser.add_argument("--button", type=int)
-
-    try:
-        parsed_args, _ = parser.parse_known_args(argv)
-    except SystemExit:
-        logger.warning("Ignoring invalid pin CLI arguments.")
-        return {}
-
-    overrides = {}
-    for config_key in PIN_ARG_TO_CONFIG_KEY.values():
-        pin_value = getattr(parsed_args, config_key)
-        if pin_value is None:
-            continue
-
-        overrides[config_key] = str(pin_value)
-
-    return overrides
-
-
-def _apply_pin_overrides_from_cli(config_obj, config_path: Path):
-    pin_overrides = _parse_pin_overrides(sys.argv[1:])
-    if not pin_overrides:
-        return
-
-    if not config_obj.has_section("GPIO"):
-        config_obj["GPIO"] = {}
-
-    for key, value in pin_overrides.items():
-        config_obj["GPIO"][key] = value
-
-    try:
-        with open(config_path, "w") as f:
-            config_obj.write(f)
-        logger.info("Applied GPIO pin overrides from CLI args: %s", ", ".join(f"{k}={v}" for k, v in pin_overrides.items()))
-    except OSError as e:
-        logger.error("Failed to persist GPIO pin overrides to config file: %s", e)
-
-
-config = configparser.ConfigParser()
-config.read(CONFIG_PATH)
-_apply_pin_overrides_from_cli(config, CONFIG_PATH)
-
-ROBOT_CODE = config.get("Code", "path", "robot_code.py")
-RASPI_FUNCTIONS_PATH = Path(
-    config.get("Code", "raspi_functions_path", fallback="raspi_functions/")
-).expanduser()
-if not RASPI_FUNCTIONS_PATH.is_absolute():
-    RASPI_FUNCTIONS_PATH = (Path.home() / "spiberry" / RASPI_FUNCTIONS_PATH).resolve()
-
-
-def _resolve_raspi_module_file(configured_path: Path) -> Path:
-    if configured_path.suffix == ".py":
-        return configured_path
-    return configured_path / "__init__.py"
-
-
-RASPI_FUNCTIONS_MODULE_FILE = _resolve_raspi_module_file(RASPI_FUNCTIONS_PATH)
 
 rgbLED = RGBLED(config.getint("GPIO", "red"), config.getint("GPIO", "green"), config.getint("GPIO", "blue"), active_high=config.getboolean("GPIO", "active_high", fallback=False))
 button = Button(config.getint("GPIO", "button"), pull_up=True)
@@ -214,8 +112,8 @@ class HotReloadHandler(FileSystemEventHandler):
         self.last_code = controller.code
 
     def on_modified(self, event):
-        if event.src_path.endswith(ROBOT_CODE):
-            with open(ROBOT_CODE, "r") as f:
+        if event.src_path.endswith(self.controller.robot_code_path):
+            with open(self.controller.robot_code_path, "r") as f:
                 new_code = f.read()
                 if new_code != self.last_code:
                     logger.info("Hot reloaded robot_code.py")
@@ -233,10 +131,10 @@ class HotReloadHandler(FileSystemEventHandler):
                 logger.debug("Skipping unresolved modified path: %s", event.src_path)
 
 class Controller:
-    def __init__(self):
+    def __init__(self, robot_code_path=ROBOT_CODE):
         self.devices = {}
         self.code = ""
-        self.robot_code_path = ROBOT_CODE
+        self.robot_code_path = robot_code_path if robot_code_path else ROBOT_CODE
         self.vision_camera = None
         self.vision_model = None
         self.vision_contour = None

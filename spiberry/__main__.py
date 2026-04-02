@@ -7,6 +7,11 @@ import zipfile
 from pathlib import Path
 import importlib.metadata as metadata
 
+try:
+    from .service import install_service
+except ImportError:
+    from service import install_service
+
 def _getch():
     """Read a single keypress without waiting for Enter (cross-platform)."""
     if os.name == "nt":
@@ -95,9 +100,13 @@ def running_in_correct_venv(expected_venv_path):
         return False
 
     libs = set([d.metadata["Name"].lower() for d in metadata.distributions()])
-    for lib in ("gpiozero","mpremote","pyserial","watchdog","rpi-gpio"):
-        if lib not in libs:
-            return False
+    for lib in ("gpiozero","mpremote","pyserial","watchdog",("rpi-gpio","rpi-lgpio")):
+        if isinstance(lib, tuple):
+            if not any(l in libs for l in lib):
+                return False
+        else:
+            if lib not in libs:
+                return False
     
     return True
 
@@ -155,18 +164,18 @@ def pip_install(python, extract_dir):
     try:
         subprocess.check_call(cmd)
     except subprocess.CalledProcessError:
-        raise RuntimeError(f"Failed to install packages. Trying to install from PyPI as fallback.")
+        print("Failed to install packages. Trying to install from PyPI as fallback.")
 
-    cmd = [
-        str(python),
-        "-m",
-        "pip",
-        "install",
-        "-r",
-        str(reqs),
-    ]
+        cmd = [
+            str(python),
+            "-m",
+            "pip",
+            "install",
+            "-r",
+            str(reqs),
+        ]
 
-    subprocess.check_call(cmd)
+        subprocess.check_call(cmd)
 
 def install_extra(python, libs=None):
     if libs is None:
@@ -464,13 +473,23 @@ def reexec_in_venv(python, extract_dir, app_args):
         sys.exit(1)
 
 
+def install_systemd_service(extract_dir, python, app_args=None, start_service=False):
+    install_service(
+        service_name="sbe.service",
+        app_args=app_args,
+        start=start_service,
+        python_executable=python,
+        template_path=extract_dir / "sbe.service",
+        working_directory=extract_dir,
+    )
+
+
 def main():
-    # is running root?
-    if os.name != "nt":
-        geteuid = getattr(os, "geteuid", None)
-        if geteuid is not None and geteuid() != 0:
-            print("This application must be run as root. Please use sudo.")
-            sys.exit(1)
+    installer_flags = {"--install-service", "--start-service", "--run"}
+    install_service_requested = "--install-service" in sys.argv[1:]
+    start_service_requested = "--start-service" in sys.argv[1:]
+    run_requested = "--run" in sys.argv[1:]
+    app_args = [arg for arg in sys.argv[1:] if arg not in installer_flags]
 
     zip_path = Path(__file__).resolve().parent
     work_dir = Path(os.getcwd())
@@ -517,12 +536,14 @@ def main():
         if extra_libs:
             install_extra(python, extra_libs)
 
-    if len(sys.argv) > 1 and sys.argv[1] == "--set-pins":
+    run_args = app_args[:]
+    if "--set-pins" in run_args:
         selected_pins = interactive_pin_menu()
-        pin_args = [arg for arg in sys.argv[1:] if arg != "--set-pins"]
+        pin_args = [arg for arg in run_args if arg != "--set-pins"]
         if selected_pins:
             for key, value in selected_pins.items():
                 pin_args.extend([key, str(value)])
+        run_args = pin_args
     
     fix_permissions(work_dir)
     # Make scripts executable
@@ -531,19 +552,16 @@ def main():
         for script in scripts_dir.glob("*.sh"):
             script.chmod(0o755)
 
+    if install_service_requested:
+        install_systemd_service(
+            extract_dir=extract_dir,
+            python=python,
+            app_args=run_args,
+            start_service=start_service_requested,
+        )
 
-    if os.name != "nt" and not os.path.exists("/etc/systemd/system/sbe.service"):
-        template = extract_dir / "sbe.service"
-        service = template.read_text()
-        service = service.replace("<execstart>", str(python) + " -m spiberry.app.main" + " " + " ".join(pin_args if 'pin_args' in locals() else sys.argv[1:]))
-        service = service.replace("<workingdirectory>", str(extract_dir))
-        destination = Path("/etc/systemd/system/sbe.service")
-        destination.write_text(service)
-        subprocess.check_call(["systemctl", "daemon-reload"])
-        subprocess.check_call(["systemctl", "enable", "sbe.service"])
-        subprocess.check_call(["systemctl", "start", "sbe.service"])
-    else:
-        reexec_in_venv(python, extract_dir, pin_args if 'pin_args' in locals() else sys.argv[1:])
+    if run_requested:
+        reexec_in_venv(python, extract_dir, run_args)
 
 
 if __name__ == "__main__":
