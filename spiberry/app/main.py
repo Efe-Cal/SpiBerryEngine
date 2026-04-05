@@ -51,7 +51,36 @@ if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
     logger.critical("Starter pin not connected to ground. Please connect pin %s to ground to start the program.", config.get("GPIO", "starter", fallback="21"))
     sys.exit(1)
 
-rgbLED = RGBLED(config.getint("GPIO", "red"), config.getint("GPIO", "green"), config.getint("GPIO", "blue"), active_high=config.getboolean("GPIO", "active_high", fallback=False))
+class RGBLEDWrapper(RGBLED):
+    def __init__(self, *args, **kwargs):
+        self._enabled_in_hardware = False
+        try:
+            super().__init__(*args, **kwargs)
+            self._enabled_in_hardware = True
+        except (gpiozero.exc.GPIOPinMissing, gpiozero.exc.GPIOZeroError) as e:
+            logger.warning("RGB LED not initialized: %s", e)
+
+    def _is_allowed(self):
+        return self._enabled_in_hardware and config.getboolean("GPIO", "rgb_led_enabled", fallback=True)
+
+    def blink(self, *args, **kwargs):
+        if self._is_allowed():
+            super().blink(*args, **kwargs)
+
+    def on(self):
+        if self._is_allowed():
+            super().on()
+
+    def off(self):
+        if self._is_allowed():
+            super().off()
+
+    @RGBLED.color.setter
+    def color(self, value):
+        if self._is_allowed():
+            RGBLED.color.fset(self, value)
+
+rgbLED = RGBLEDWrapper(config.getint("GPIO", "red", fallback=None), config.getint("GPIO", "green", fallback=None), config.getint("GPIO", "blue", fallback=None), active_high=config.getboolean("GPIO", "active_high", fallback=False))
 button = Button(config.getint("GPIO", "button"), pull_up=True)
 
 # Device constructor map - maps device type to constructor function
@@ -154,7 +183,7 @@ class Controller:
 
         self.work_event = threading.Event()
         self.worker_thread = None
-            
+
     
     def init_mp_device(self):
         self.state = State()

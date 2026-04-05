@@ -55,6 +55,7 @@ Connect the following components to your Raspberry Pi:
   - Red: GPIO 0
   - Green: GPIO 11
   - Blue: GPIO 9
+You can disable the RGB LED by setting `rgb_led_enabled = False` under `[GPIO]` in the config file.
 - **Button**: Connect to GPIO pin specified (default: 17)
 
 ## Usage
