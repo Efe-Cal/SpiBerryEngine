@@ -47,7 +47,7 @@ from spiberry.app.config import config, create_default_config, RASPI_FUNCTIONS_M
 create_default_config()
 
 starter_pin = Button(config.getint("GPIO", "starter", fallback=21), pull_up=True)
-if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0":
+if not starter_pin.is_pressed and os.getenv("IGNORE_STARTER_PIN","0") == "0" or config.getboolean("GPIO", "ignore_starter_pin", fallback=False):
     logger.critical("Starter pin not connected to ground. Please connect pin %s to ground to start the program.", config.get("GPIO", "starter", fallback="21"))
     sys.exit(1)
 

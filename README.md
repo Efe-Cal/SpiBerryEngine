@@ -50,7 +50,7 @@ sudo python spiberry.pyz --install-service --start-service
 
 Connect the following components to your Raspberry Pi:
 
-- **Starter Pin**: Must be connected to ground (GPIO 21 by default) to start the program. You can bypass this by setting the environment variable `IGNORE_STARTER_PIN=1`.
+- **Starter Pin**: Must be connected to ground (GPIO 21 by default) to start the program. You can bypass this by setting the environment variable `IGNORE_STARTER_PIN=1` or by setting `ignore_starter_pin = True` under `[GPIO]` in the config file.
 - **RGB LED**: Connect to the GPIO pins specified during initialization or defaults:
   - Red: GPIO 0
   - Green: GPIO 11

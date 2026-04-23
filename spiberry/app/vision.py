@@ -204,7 +204,7 @@ class ContourDetector:
         n: int
         vertices: int
     
-    def detect_contours(self, img, filters:Filters=None, _color_ranges:dict=None):
+    def detect_contours(self, img, filters:Filters=None, _color_ranges:dict=None, merge_close_dist: int=20):
         """
         Detects contours in the image
         """
@@ -231,7 +231,7 @@ class ContourDetector:
             contours, _ = cv2.findContours(dist_transform.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
             # Merge contours that are close to each other and calculate total area
-            contours = self.merge_close_contours(contours, d_thresh=20)
+            contours = self.merge_close_contours(contours, d_thresh=merge_close_dist)
             
             min_area = filters.get("min_area") if filters else None
             max_area = filters.get("max_area") if filters else None
@@ -243,8 +243,13 @@ class ContourDetector:
             
             # Get the largest n contours
             sorted_contours = sorted(contours, key=cv2.contourArea, reverse=True)
-            n = filters.get("n") or 1 if filters else 1
+            n = filters.get("n", 1) if filters else 1
             contours = sorted_contours[:n]
+            
+            # Filter by number of vertices
+            vertices = filters.get("vertices") if filters else None
+            if vertices is not None:
+                contours = [c for c in contours if len(cv2.approxPolyDP(c, 0.04 * cv2.arcLength(c, True), True)) == vertices]                
             
             for cnt in contours:
                 M = cv2.moments(cnt)
@@ -254,7 +259,7 @@ class ContourDetector:
                 detections.append((color, cv2.contourArea(cnt), cx, cy))
             
         if len(detections) == 0 and not self.retry_with_extended:
-            logger.info("[Vision] No boxes detected")
+            logger.info("[Vision] No boxes detected, extending color ranges and retrying...")
             self.retry_with_extended = True
             try:
                 extended = self.extend_all_color_ranges(self.config["color_ranges"])
