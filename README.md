@@ -106,6 +106,7 @@ active_high = False
 [Code]
 path = robot_code.py
 raspi_functions_path = raspi_functions/
+trigger_mode = external # Options: external, builtin
 
 [Vision]
 enabled = False

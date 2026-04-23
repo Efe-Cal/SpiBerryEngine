@@ -669,7 +669,8 @@ class Controller:
         logger.info("Code execution started. Awaiting function calls.")
 
     def worker(self):
-        self.run_code()
+        if config.get("Code", "trigger_mode", fallback="external") == "external":
+            self.run_code()
         
         while self.work_event.is_set():
             sleep(0.05)
@@ -702,49 +703,56 @@ class Controller:
         try:
             rgbLED.color = (0,1,0)  # green
             logger.info("System ready. Waiting for button press.")
-            while True:
-                if button.is_pressed:
-                    if self.work_event.is_set():
-                        logger.info("Button pressed, stopping work...")
-                        # Stop the robot
-                        self.work_event.clear()
-                        self.stop(self.state)
-                        # Blink red 3 times
-                        rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
-                        sleep(0.2)
-                        rgbLED.color = (0,1,0)  # green
-                    else:
-                        # Reload the code and raspi_functions module
-                        with open(ROBOT_CODE,"r") as f:
-                            new_code = f.read()
-                            if new_code != self.code:
-                                logger.info("Reloaded robot_code.py")
-                                # Blink cyan 3 times (background)
-                                rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
-                            self.code = new_code
-                        old_raspi_funcs = len(raspi_functions.__dict__.keys())
-                        importlib.reload(raspi_functions)
-                        if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
-                            rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
-                            logger.info("Reloaded raspi_functions module.")
-                        
-                        # Check the serial connection
-                        if not self.state.transport.serial.is_open:
-                            logger.error("Serial port is not open, reconnecting...")
-                            commands.do_disconnect(self.state)
-                            commands.do_connect(self.state)
+            
+            if config.get("Code", "trigger_mode", fallback="external") != "external":
+                self.work_event.set()
+                worker_thread = threading.Thread(target=self.worker)
+                worker_thread.start()
+                logger.info("Built-in button is used. Starting worker thread in internal mode.")
+            else:
+                while True:
+                    if button.is_pressed:
+                        if self.work_event.is_set():
+                            logger.info("Button pressed, stopping work...")
+                            # Stop the robot
+                            self.work_event.clear()
+                            self.stop(self.state)
+                            # Blink red 3 times
+                            rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(1,0,0), off_color=(0,0,0), background=False)
+                            sleep(0.2)
+                            rgbLED.color = (0,1,0)  # green
                         else:
-                            self.state.transport.serial.flushInput()
-                            self.state.transport.serial.flushOutput()
+                            # Reload the code and raspi_functions module
+                            with open(ROBOT_CODE,"r") as f:
+                                new_code = f.read()
+                                if new_code != self.code:
+                                    logger.info("Reloaded robot_code.py")
+                                    # Blink cyan 3 times (background)
+                                    rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                                self.code = new_code
+                            old_raspi_funcs = len(raspi_functions.__dict__.keys())
+                            importlib.reload(raspi_functions)
+                            if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
+                                rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
+                                logger.info("Reloaded raspi_functions module.")
+                            
+                            # Check the serial connection
+                            if not self.state.transport.serial.is_open:
+                                logger.error("Serial port is not open, reconnecting...")
+                                commands.do_disconnect(self.state)
+                                commands.do_connect(self.state)
+                            else:
+                                self.state.transport.serial.flushInput()
+                                self.state.transport.serial.flushOutput()
 
-                        # Start the worker thread
-                        self.work_event.set()
-                        worker_thread = threading.Thread(target=self.worker)
-                        worker_thread.start()
-                        logger.info("Button pressed, starting work...")
-                        rgbLED.color = (1,1,0)  # yellow
+                            # Start the worker thread
+                            self.work_event.set()
+                            worker_thread = threading.Thread(target=self.worker)
+                            worker_thread.start()
+                            logger.info("Button pressed, starting work...")
+                            rgbLED.color = (1,1,0)  # yellow
 
-                    sleep(0.2)  # Debounce delay
+                        sleep(0.2)  # Debounce delay
         except Exception as e:
             logger.exception(f"Error occurred: {e}")
             sys.exit(1)

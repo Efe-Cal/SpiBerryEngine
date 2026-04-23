@@ -23,6 +23,7 @@ def create_default_config():
         config["Code"] = {
             "path": "~/spiberry/robot_code.py",
             "raspi_functions_path": "~/spiberry/raspi_functions/",
+            "trigger_mode": "external",
         }
         config["Vision"] = {
             "enabled": "False",
