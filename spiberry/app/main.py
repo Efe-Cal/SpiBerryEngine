@@ -129,6 +129,12 @@ def _load_raspi_functions_module(module_file: Path):
 raspi_functions = _load_raspi_functions_module(RASPI_FUNCTIONS_MODULE_FILE)
 logger.info("Loaded raspi_functions from %s", RASPI_FUNCTIONS_MODULE_FILE)
 
+
+def _reload_raspi_functions_module():
+    global raspi_functions
+    raspi_functions = _load_raspi_functions_module(RASPI_FUNCTIONS_MODULE_FILE)
+    logger.info("Hot reloaded raspi_functions from %s", RASPI_FUNCTIONS_MODULE_FILE)
+
 if config.getboolean("Vision", "enabled"):
     import spiberry.app.vision as vision
     logger.info("Vision module loaded.")
@@ -153,8 +159,7 @@ class HotReloadHandler(FileSystemEventHandler):
         else:
             try:
                 if Path(event.src_path).resolve() == RASPI_FUNCTIONS_MODULE_FILE:
-                    importlib.reload(raspi_functions)
-                    logger.info("Hot reloaded raspi_functions module.")
+                    _reload_raspi_functions_module()
                     rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=False)
             except OSError:
                 logger.debug("Skipping unresolved modified path: %s", event.src_path)
@@ -731,7 +736,7 @@ class Controller:
                                     rgbLED.blink(on_time=0.2, off_time=0.2, n=2, on_color=(0,1,1), off_color=(0,0,0), background=True)
                                 self.code = new_code
                             old_raspi_funcs = len(raspi_functions.__dict__.keys())
-                            importlib.reload(raspi_functions)
+                            _reload_raspi_functions_module()
                             if len(raspi_functions.__dict__.keys()) != old_raspi_funcs:
                                 rgbLED.blink(on_time=0.2, off_time=0.2, n=3, on_color=(0,1,1), off_color=(0,0,0), background=True)
                                 logger.info("Reloaded raspi_functions module.")
