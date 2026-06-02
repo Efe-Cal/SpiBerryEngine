@@ -1,11 +1,20 @@
 import * as vscode from 'vscode';
 import { NodeSSH } from 'node-ssh';
 import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs';
 
 export interface DeviceSshConfig {
     host: string;
     username: string;
     password: string;
+}
+
+export interface RemoteDirectoryEntry {
+    name: string;
+    path: string;
+    type: 'file' | 'directory';
+    isImage: boolean;
 }
 
 function quoteForSingleQuotedShell(value: string): string {
@@ -81,6 +90,51 @@ export async function createSshConnection(sshConfig: DeviceSshConfig): Promise<N
     return ssh;
 }
 
+export async function listRemoteDirectory(
+    sshConfig: DeviceSshConfig,
+    remotePath: string
+): Promise<RemoteDirectoryEntry[]> {
+    const ssh = await createSshConnection(sshConfig);
+
+    try {
+        const normalizedPath = path.posix.normalize(remotePath.replace(/\\/g, '/'));
+        const command = `if [ -d ${quoteForSingleQuotedShell(normalizedPath)} ]; then LC_ALL=C ls -1ApA ${quoteForSingleQuotedShell(normalizedPath)}; else echo "__SPIBERRY_NOT_A_DIRECTORY__" 1>&2; exit 2; fi`;
+        const result = await ssh.execCommand(command);
+
+        if (typeof result.code === 'number' && result.code !== 0) {
+            const stderr = result.stderr?.trim() || 'unknown error';
+            throw new Error(stderr);
+        }
+
+        return (result.stdout ?? '')
+            .split(/\r?\n/)
+            .filter((line) => line !== '')
+            .map((line) => {
+                const isDirectory = line.endsWith('/');
+                const name = isDirectory ? line.slice(0, -1) : line;
+                const fullPath = path.posix.join(normalizedPath, name);
+                const extension = path.posix.extname(name).toLowerCase();
+                const isImage = ['.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'].includes(extension);
+
+                return {
+                    name,
+                    path: fullPath,
+                    type: isDirectory ? 'directory' : 'file',
+                    isImage
+                } satisfies RemoteDirectoryEntry;
+            })
+            .sort((left, right) => {
+                if (left.type !== right.type) {
+                    return left.type === 'directory' ? -1 : 1;
+                }
+
+                return left.name.localeCompare(right.name);
+            });
+    } finally {
+        ssh.dispose();
+    }
+}
+
 export async function uploadFileOverSsh(sshConnection: NodeSSH, localFilePath: string, remoteFilePath: string): Promise<void> {
     await sshConnection.putFile(localFilePath, remoteFilePath);
 }
@@ -129,4 +183,25 @@ export async function createInteractiveSshTerminal(sshConnection: NodeSSH, initC
     });
 
     terminal.show();
+}
+
+export async function loadRemoteImageDataUri(sshConfig: DeviceSshConfig, remoteImagePath: string): Promise<string> {
+    const ssh = await createSshConnection(sshConfig);
+    const tempFilePath = path.join(
+        os.tmpdir(),
+        `spiberry-vision-${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(remoteImagePath) || '.img'}`
+    );
+
+    try {
+        await ssh.getFile(tempFilePath, remoteImagePath);
+
+        const fileBuffer = await fs.promises.readFile(tempFilePath);
+        const ext = path.extname(remoteImagePath).toLowerCase().replace('.', '');
+        const mimeType = ext === 'jpg' ? 'jpeg' : (ext || 'png');
+
+        return `data:image/${mimeType};base64,${fileBuffer.toString('base64')}`;
+    } finally {
+        ssh.dispose();
+        await fs.promises.rm(tempFilePath, { force: true });
+    }
 }

@@ -231,6 +231,10 @@ export function getControlPanelHtml(webview: vscode.Webview, nonce: string): str
                 <div class="description">Add helper utility classes.</div>
                 <button data-command="spiberry.insertRaspiUtilClasses">Insert Raspi Util Classes</button>
             </div>
+            <div class="command-group">
+                <div class="description">Open the remote image browser in the editor area.</div>
+                <button data-command="spiberry.openVisionTools">Open Vision Tools</button>
+            </div>
         </div>
     </div>
 

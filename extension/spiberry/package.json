@@ -57,6 +57,10 @@
       {
         "command": "spiberry.openSshConsole",
         "title": "Spiberry: Open SSH Console"
+      },
+      {
+        "command": "spiberry.openVisionTools",
+        "title": "Spiberry: Open Vision Tools"
       }
     ],
     "configuration": {
@@ -85,6 +89,10 @@
           "id": "spiberry.controlPanel",
           "name": "Control Panel",
           "type": "webview"
+        },
+        {
+          "id": "spiberry.visionFiles",
+          "name": "Vision Files"
         }
       ]
     }

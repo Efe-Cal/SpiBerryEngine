@@ -1,16 +1,20 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as os from 'os';
 import * as fs from 'fs';
 import * as https from 'https';
 import {
     checkDeviceReachabilityAndServiceStatus,
     createInteractiveSshTerminal,
     createSshConnection,
+    listRemoteDirectory,
     sendFileToDevice,
     uploadFileOverSsh,
+    loadRemoteImageDataUri,
     type DeviceSshConfig
 } from './sshUtils';
 import { getControlPanelHtml } from './controlPanelHtml';
+import { VisionToolsPanel } from './visionToolsPanel';
 
 const RELEASE_URL = 'https://github.com/Efe-Cal/SpiBerryEngine/releases/latest/download/spiberry.pyz';
 const REMOTE_CONFIG_FILE_NAME = 'spiberry_config.ini';
@@ -28,6 +32,11 @@ interface UploadPathConfig {
     configPath: string;
 }
 
+interface WebviewCommandMessage {
+    command?: unknown;
+    path?: unknown;
+}
+
 class ControlPanelViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'spiberry.controlPanel';
     private _view?: vscode.WebviewView;
@@ -42,17 +51,18 @@ class ControlPanelViewProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = getControlPanelHtml(webviewView.webview, this.getNonce());
 
-        webviewView.webview.onDidReceiveMessage(async (message: { command?: string }) => {
-            if (!message.command) {
+        webviewView.webview.onDidReceiveMessage(async (message: WebviewCommandMessage) => {
+            const command = extractCommandId(message.command);
+            if (!command) {
                 return;
             }
 
-            if (message.command === 'spiberry.refreshStatus') {
+            if (command === 'spiberry.refreshStatus') {
                 await this.updateStatus();
                 return;
             }
 
-            void vscode.commands.executeCommand(message.command);
+            void vscode.commands.executeCommand(command);
         });
 
         // Initial status update
@@ -84,13 +94,7 @@ class ControlPanelViewProvider implements vscode.WebviewViewProvider {
     }
 
     private getNonce(): string {
-        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        let result = '';
-        for (let i = 0; i < 32; i += 1) {
-            result += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-
-        return result;
+        return createNonce();
     }
 }
 
@@ -141,6 +145,7 @@ function isRobotCodeFile(document: vscode.TextDocument): boolean {
 function quoteForSingleQuotedShell(value: string): string {
     return `'${value.replace(/'/g, `'\\''`)}'`;
 }
+
 
 function stripSpiberryBasePrefix(value: string): string {
     const normalized = value.replace(/\\/g, '/').trim();
@@ -272,11 +277,43 @@ function joinRemotePath(...segments: string[]): string {
     return path.posix.join(...normalizedSegments);
 }
 
+function createNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 32; i += 1) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
+    return result;
+}
+
+function extractCommandId(value: unknown): string | undefined {
+    if (typeof value === 'string') {
+        const command = value.trim();
+        return command === '' ? undefined : command;
+    }
+
+    if (typeof value === 'object' && value !== null && 'command' in value) {
+        const nestedCommand = (value as { command?: unknown }).command;
+        if (typeof nestedCommand === 'string') {
+            const command = nestedCommand.trim();
+            return command === '' ? undefined : command;
+        }
+    }
+
+    return undefined;
+}
+
 export function activate(context: vscode.ExtensionContext): void {
     console.log('Congratulations, your extension "spiberry" is now active!');
 
     const controlPanelProvider = new ControlPanelViewProvider(context);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(ControlPanelViewProvider.viewType, controlPanelProvider));
+
+    const openVisionToolsCommand = vscode.commands.registerCommand('spiberry.openVisionTools', () => {
+        VisionToolsPanel.createOrShow(context);
+    });
+    context.subscriptions.push(openVisionToolsCommand);
 
     statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 1);
     statusBarItem.command = 'spiberry.setDeviceCredentials';
